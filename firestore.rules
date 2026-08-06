@@ -1,0 +1,129 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return signedIn() && (
+        request.auth.token.admin == true ||
+        (
+          exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "ADMIN"
+        )
+      );
+    }
+
+    function isPlayer() {
+      return signedIn() && request.auth.token.player == true;
+    }
+
+    function isDevice() {
+      return signedIn() && request.auth.token.device == true;
+    }
+
+    function playerRoomId() {
+      return request.auth.token.roomId;
+    }
+
+    function deviceRoomId() {
+      return request.auth.token.roomId;
+    }
+
+    function deviceId() {
+      return request.auth.token.deviceId;
+    }
+
+    function playerId() {
+      return request.auth.token.playerId != null ? request.auth.token.playerId : request.auth.uid;
+    }
+
+    function adminOrPlayer() {
+      return isAdmin() || isPlayer() || isDevice();
+    }
+
+    function isPlayerStatusOwner(statusPlayerId) {
+      return isPlayer() && (request.auth.uid == statusPlayerId || playerId() == statusPlayerId);
+    }
+
+    match /users/{userId} {
+      allow read: if isAdmin() || (signedIn() && request.auth.uid == userId);
+      allow create: if isAdmin() || (
+        signedIn() &&
+        request.auth.uid == userId &&
+        request.resource.data.active == false
+      );
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /rooms/{roomId} {
+      allow read: if isAdmin() ||
+        (isPlayer() && playerRoomId() == roomId) ||
+        (isDevice() && deviceRoomId() == roomId);
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /tributes/{tributeId} {
+      allow read: if isAdmin() ||
+        (isPlayer() && resource.data.roomId == playerRoomId()) ||
+        (isDevice() && resource.data.roomId == deviceRoomId());
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /active_sessions/{roomId} {
+      allow read: if isAdmin() ||
+        (isPlayer() && playerRoomId() == roomId) ||
+        (isDevice() && deviceRoomId() == roomId);
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /playlists/{playlistId} {
+      allow read: if adminOrPlayer();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /settings/{settingId} {
+      allow read: if adminOrPlayer();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /history/{historyId} {
+      allow read: if isAdmin();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /player_status/{playerId} {
+      allow read: if isAdmin();
+      allow create, update: if isAdmin() || isPlayerStatusOwner(playerId);
+      allow delete: if isAdmin();
+    }
+
+    match /devices/{registeredDeviceId} {
+      allow read: if isAdmin() || (isDevice() && deviceId() == registeredDeviceId);
+      allow update: if isAdmin() || (
+        isDevice() &&
+        deviceId() == registeredDeviceId &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "lastHeartbeat",
+          "lastSeen",
+          "online",
+          "currentState",
+          "appVersion",
+          "kioskEnabled"
+        ])
+      );
+      allow create, delete: if isAdmin();
+    }
+
+    match /system/{documentId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

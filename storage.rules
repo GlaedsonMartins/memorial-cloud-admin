@@ -1,0 +1,44 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return signedIn() && request.auth.token.admin == true;
+    }
+
+    function isPlayer() {
+      return signedIn() && request.auth.token.player == true;
+    }
+
+    function isDevice() {
+      return signedIn() && request.auth.token.device == true;
+    }
+
+    function adminOrPlayer() {
+      return isAdmin() || isPlayer() || isDevice();
+    }
+
+    match /tributes/{tributeId}/{mediaKind}/{fileName} {
+      allow read: if adminOrPlayer();
+      allow write, delete: if isAdmin();
+    }
+
+    match /settings/{kind}/{fileName} {
+      allow read: if adminOrPlayer();
+      allow write, delete: if isAdmin();
+    }
+
+    match /playlists/{playlistId}/{fileName} {
+      allow read: if adminOrPlayer();
+      allow write, delete: if isAdmin();
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
