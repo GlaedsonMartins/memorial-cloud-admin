@@ -425,26 +425,39 @@ function RoomManagerSheet({
     if (!files) return;
     const allowedPhotoTypes = ["image/jpeg", "image/jpg", "image/png", "image/webp", "image/pjpeg", "image/x-png"];
     const allowedPhotoExtensions = [".jpg", ".jpeg", ".png", ".webp"];
-    const next = Array.from(files).filter((file) => {
+    const acceptedFiles: File[] = [];
+    const rejectedFiles: File[] = [];
+
+    for (const file of Array.from(files)) {
       const typeAllowed = allowedPhotoTypes.includes(file.type);
       const extension = String(file.name).toLowerCase().split(".").pop();
       const extensionAllowed = extension
         ? allowedPhotoExtensions.includes(`.${extension}`)
         : false;
-      return typeAllowed || extensionAllowed;
-    });
+      if (typeAllowed || extensionAllowed) {
+        acceptedFiles.push(file);
+      } else {
+        rejectedFiles.push(file);
+      }
+    }
 
-    if (next.length === 0) {
-      toast.error("Nenhuma foto valida selecionada. Use JPG, PNG ou WEBP.");
+    if (rejectedFiles.length > 0) {
+      toast.error(
+        `${rejectedFiles.length} arquivo(s) nao aceito(s). Use JPG, PNG ou WEBP.`,
+      );
+    }
+
+    if (acceptedFiles.length === 0) {
       return;
     }
 
     const available = MAX_PHOTOS_PER_TRIBUTE - photos.length;
-    if (next.length > available) {
+    if (acceptedFiles.length > available) {
       toast.warning(`Limite de ${MAX_PHOTOS_PER_TRIBUTE} fotos por homenagem.`);
     }
 
-    setPhotos((current) => [...current, ...next.slice(0, available)]);
+    setPhotos((current) => [...current, ...acceptedFiles.slice(0, available)]);
+    toast.success(`${Math.min(acceptedFiles.length, available)} foto(s) adicionada(s) ao rascunho.`);
   }
 
   async function handleVideoFiles(files: FileList | null) {
