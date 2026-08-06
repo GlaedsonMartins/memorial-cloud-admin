@@ -640,7 +640,7 @@ function RoomManagerSheet({
                 icon={<ImageIcon className="h-4 w-4" />}
                 title="Fotos"
                 description="JPG, PNG ou WEBP · maximo 20"
-                accept=".jpg,.jpeg,.png,.webp,image/*"
+                accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/jpg,image/png,image/webp,image/*"
                 multiple
                 onChange={handlePhotoFiles}
               />
