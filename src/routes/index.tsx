@@ -423,9 +423,16 @@ function RoomManagerSheet({
 
   async function handlePhotoFiles(files: FileList | null) {
     if (!files) return;
-    const next = Array.from(files).filter((file) =>
-      ["image/jpeg", "image/png", "image/webp"].includes(file.type),
-    );
+    const allowedPhotoTypes = ["image/jpeg", "image/png", "image/webp"];
+    const allowedPhotoExtensions = [".jpg", ".jpeg", ".png", ".webp"];
+    const next = Array.from(files).filter((file) => {
+      const typeAllowed = allowedPhotoTypes.includes(file.type);
+      const extension = String(file.name).toLowerCase().split(".").pop();
+      const extensionAllowed = extension
+        ? allowedPhotoExtensions.includes(`.${extension}`)
+        : false;
+      return typeAllowed || extensionAllowed;
+    });
     const available = MAX_PHOTOS_PER_TRIBUTE - photos.length;
     if (next.length > available)
       toast.warning(`Limite de ${MAX_PHOTOS_PER_TRIBUTE} fotos por homenagem.`);
@@ -633,7 +640,7 @@ function RoomManagerSheet({
                 icon={<ImageIcon className="h-4 w-4" />}
                 title="Fotos"
                 description="JPG, PNG ou WEBP · maximo 20"
-                accept="image/jpeg,image/png,image/webp"
+                accept=".jpg,.jpeg,.png,.webp,image/*"
                 multiple
                 onChange={handlePhotoFiles}
               />

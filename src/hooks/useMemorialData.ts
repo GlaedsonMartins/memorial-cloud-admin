@@ -92,16 +92,17 @@ export function useMemorialData(userReady: boolean) {
       .sort((a, b) => a.number - b.number)
       .map((room) => {
         const activeSession = activeSessions.find((session) => session.roomId === room.id) ?? null;
+        const activeSessionTribute = activeSession
+          ? tributes.find((item) => item.id === activeSession.tributeId) ?? null
+          : null;
+        const roomActiveTribute =
+          tributes.find((item) => item.id === room.activeTributeId && item.status !== "ENDED") ?? null;
         const createdTribute =
           tributes
             .filter((item) => item.roomId === room.id && item.status === "CREATED")
             .sort((a, b) => (timestampMs(b.createdAt) ?? 0) - (timestampMs(a.createdAt) ?? 0))[0] ??
           null;
-        const tribute =
-          tributes.find((item) => item.id === room.activeTributeId) ??
-          tributes.find((item) => item.id === activeSession?.tributeId) ??
-          createdTribute ??
-          null;
+        const tribute = activeSessionTribute ?? roomActiveTribute ?? createdTribute ?? null;
         const playlist = playlists.find((item) => item.id === tribute?.playlistId) ?? null;
         const roomDevices = devices.filter((item) => item.roomId === room.id);
         const device =
