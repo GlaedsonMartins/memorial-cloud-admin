@@ -423,7 +423,7 @@ function RoomManagerSheet({
 
   async function handlePhotoFiles(files: FileList | null) {
     if (!files) return;
-    const allowedPhotoTypes = ["image/jpeg", "image/png", "image/webp"];
+    const allowedPhotoTypes = ["image/jpeg", "image/jpg", "image/png", "image/webp", "image/pjpeg", "image/x-png"];
     const allowedPhotoExtensions = [".jpg", ".jpeg", ".png", ".webp"];
     const next = Array.from(files).filter((file) => {
       const typeAllowed = allowedPhotoTypes.includes(file.type);
@@ -433,9 +433,17 @@ function RoomManagerSheet({
         : false;
       return typeAllowed || extensionAllowed;
     });
+
+    if (next.length === 0) {
+      toast.error("Nenhuma foto valida selecionada. Use JPG, PNG ou WEBP.");
+      return;
+    }
+
     const available = MAX_PHOTOS_PER_TRIBUTE - photos.length;
-    if (next.length > available)
+    if (next.length > available) {
       toast.warning(`Limite de ${MAX_PHOTOS_PER_TRIBUTE} fotos por homenagem.`);
+    }
+
     setPhotos((current) => [...current, ...next.slice(0, available)]);
   }
 
