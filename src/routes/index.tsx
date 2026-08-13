@@ -62,6 +62,8 @@ import {
   deactivateRoom,
   deleteTribute,
   deletePlaylist,
+  deleteRoomDevice,
+  deleteSettingsImage,
   addPlaylistTrack,
   endTribute,
   movePlaylistTrack,
@@ -238,6 +240,67 @@ function HeaderPill({ icon, children }: { icon: React.ReactNode; children: React
     <div className="hidden items-center gap-2 rounded-md border border-border bg-surface px-3 py-1.5 text-xs text-muted-foreground md:flex">
       {icon}
       <span>{children}</span>
+    </div>
+  );
+}
+
+function MediaSettingCard({
+  title,
+  description,
+  imageUrl,
+  emptyLabel,
+  onReplace,
+  onRemove,
+  disabled,
+  children,
+}: {
+  title: string;
+  description: string;
+  imageUrl: string | null | undefined;
+  emptyLabel: string;
+  onReplace: () => void;
+  onRemove: () => void;
+  disabled?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-lg border border-border bg-surface p-4 shadow-sm">
+      {children}
+      <div className="flex items-start gap-3">
+        <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-background">
+          {imageUrl ? (
+            <img src={imageUrl} alt={title} className="h-full w-full object-cover" />
+          ) : (
+            <div className="px-2 text-center text-[11px] text-muted-foreground">{emptyLabel}</div>
+          )}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-semibold">{title}</div>
+          <p className="mt-1 text-xs text-muted-foreground">{description}</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8"
+              disabled={disabled}
+              onClick={onReplace}
+            >
+              <Upload className="mr-2 h-3.5 w-3.5" />
+              Trocar
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 border-destructive/40 text-destructive hover:bg-destructive/10"
+              disabled={disabled || !imageUrl}
+              onClick={onRemove}
+            >
+              <Trash2 className="mr-2 h-3.5 w-3.5" />
+              Excluir
+            </Button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1465,6 +1528,8 @@ function SettingsDialog({
   const [roomNames, setRoomNames] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [savingRooms, setSavingRooms] = useState(false);
+  const logoInputRef = useRef<HTMLInputElement | null>(null);
+  const defaultScreenInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -1499,6 +1564,26 @@ function SettingsDialog({
     } finally {
       setSaving(false);
     }
+  }
+
+  async function handleDeleteImage(kind: "logo" | "defaultScreen") {
+    const label = kind === "logo" ? "logo" : "tela institucional";
+    if (!window.confirm(`Excluir ${label}?`)) return;
+    setSaving(true);
+    try {
+      await deleteSettingsImage(kind);
+      toast.success(kind === "logo" ? "Logo excluida." : "Tela institucional excluida.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha ao excluir imagem.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function openImagePicker(kind: "logo" | "defaultScreen") {
+    const input = kind === "logo" ? logoInputRef.current : defaultScreenInputRef.current;
+    if (!input) return;
+    input.click();
   }
 
   async function handleSaveRooms() {
@@ -1539,6 +1624,27 @@ function SettingsDialog({
     }
   }
 
+  async function handleDeleteDevice(view: RoomViewModel) {
+    const deviceLabel = view.device?.deviceName ?? "dispositivo vinculado";
+    if (
+      !window.confirm(
+        `Excluir ${deviceLabel} da ${view.room.name}? Isso remove o vínculo para permitir um novo registro no Memorial Player.`,
+      )
+    ) {
+      return;
+    }
+
+    setSavingRooms(true);
+    try {
+      await deleteRoomDevice(view.room.id);
+      toast.success("Dispositivo desvinculado da sala.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha ao excluir dispositivo.");
+    } finally {
+      setSavingRooms(false);
+    }
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="border-border bg-surface sm:max-w-lg">
@@ -1565,9 +1671,12 @@ function SettingsDialog({
                 O nome visivel pode mudar. IDs e Players seguem estaveis para integracao.
               </p>
             </div>
-            <div className="scrollbar-hide grid max-h-64 gap-3 overflow-y-auto pr-1 md:grid-cols-2">
+            <div className="scrollbar-hide grid max-h-80 gap-4 overflow-y-auto pr-1 md:grid-cols-2">
               {rooms.map((view) => (
-                <div key={view.room.id} className="space-y-2">
+                <div
+                  key={view.room.id}
+                  className="space-y-3 rounded-lg border border-border bg-surface/80 p-4 shadow-sm"
+                >
                   <Field
                     label={`Sala ${String(view.room.number).padStart(2, "0")} · ${view.room.playerId}`}
                   >
@@ -1597,6 +1706,18 @@ function SettingsDialog({
                       ? `${view.device.deviceName} · ${view.device.online ? "online" : "offline"}`
                       : "Nenhum dispositivo registrado"}
                   </div>
+                  {view.device && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 w-full border-destructive/40 text-destructive hover:bg-destructive/10"
+                      disabled={savingRooms}
+                      onClick={() => handleDeleteDevice(view)}
+                    >
+                      <Trash2 className="mr-2 h-3.5 w-3.5" />
+                      Excluir dispositivo
+                    </Button>
+                  )}
                 </div>
               ))}
             </div>
@@ -1615,27 +1736,49 @@ function SettingsDialog({
             </Button>
           </section>
           <Separator />
-          <div className="grid gap-3 md:grid-cols-2">
-            <label className="rounded-md border border-border bg-background/45 p-3 text-sm">
+          <div className="grid gap-4 md:grid-cols-2">
+            <MediaSettingCard
+              title="Logo"
+              description="Exibida no app quando configurada."
+              imageUrl={settings?.logoUrl}
+              emptyLabel="Nenhuma logo enviada"
+              onReplace={() => openImagePicker("logo")}
+              onRemove={() => void handleDeleteImage("logo")}
+              disabled={saving}
+            >
               <input
+                ref={logoInputRef}
                 type="file"
                 accept="image/*"
                 className="hidden"
-                onChange={(event) => handleImage("logo", event.target.files?.[0])}
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  event.target.value = "";
+                  void handleImage("logo", file);
+                }}
               />
-              <Upload className="mb-2 h-4 w-4 text-muted-foreground" />
-              Enviar logo
-            </label>
-            <label className="rounded-md border border-border bg-background/45 p-3 text-sm">
+            </MediaSettingCard>
+            <MediaSettingCard
+              title="Tela institucional"
+              description="Mostrada quando a homenagem não estiver ativa."
+              imageUrl={settings?.defaultScreenUrl}
+              emptyLabel="Nenhuma tela institucional enviada"
+              onReplace={() => openImagePicker("defaultScreen")}
+              onRemove={() => void handleDeleteImage("defaultScreen")}
+              disabled={saving}
+            >
               <input
+                ref={defaultScreenInputRef}
                 type="file"
                 accept="image/*"
                 className="hidden"
-                onChange={(event) => handleImage("defaultScreen", event.target.files?.[0])}
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  event.target.value = "";
+                  void handleImage("defaultScreen", file);
+                }}
               />
-              <Upload className="mb-2 h-4 w-4 text-muted-foreground" />
-              Tela institucional
-            </label>
+            </MediaSettingCard>
           </div>
           <Button className="w-full" disabled={saving} onClick={handleSave}>
             {saving ? (
@@ -1660,12 +1803,10 @@ function CreateRoomDialog({
 }) {
   const [name, setName] = useState("");
   const [saving, setSaving] = useState(false);
-  const [created, setCreated] = useState<Awaited<ReturnType<typeof createRoom>> | null>(null);
 
   useEffect(() => {
     if (!open) {
       setName("");
-      setCreated(null);
       setSaving(false);
     }
   }, [open]);
@@ -1673,9 +1814,9 @@ function CreateRoomDialog({
   async function handleCreateRoom() {
     setSaving(true);
     try {
-      const result = await createRoom(name);
-      setCreated(result);
+      await createRoom(name);
       toast.success("Sala criada com Player provisionado.");
+      onOpenChange(false);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Falha ao criar sala.");
     } finally {
@@ -1706,20 +1847,6 @@ function CreateRoomDialog({
             )}
             Criar sala e Player
           </Button>
-
-          {created && (
-            <section className="space-y-3 rounded-md border border-border bg-background/45 p-4 text-sm">
-              <div className="flex items-center gap-2 font-semibold">
-                <KeyRound className="h-4 w-4 text-primary" />
-                Sala pronta para registro
-              </div>
-              <CredentialLine label="Sala" value={`${created.roomId} · ${created.playerId}`} />
-              <CredentialLine label="URL do Player" value={created.playerUrl} copy />
-              <p className="text-xs text-muted-foreground">
-                Abra o Memorial Player no mini computador, acesse /setup e selecione esta sala.
-              </p>
-            </section>
-          )}
         </div>
       </DialogContent>
     </Dialog>

@@ -584,14 +584,47 @@ export async function saveSettings(
 }
 
 export async function uploadSettingsImage(kind: "logo" | "defaultScreen", file: File) {
-  const upload = await uploadFile(file, `settings/${kind}`);
   const db = getFirebaseDb();
+  const settingsRef = doc(db, "settings", "general");
+  const previousSnapshot = await getDoc(settingsRef);
+  const previousData = previousSnapshot.exists()
+    ? (previousSnapshot.data() as Partial<Settings>)
+    : {};
+  const previousStoragePath =
+    kind === "logo"
+      ? (previousData.logoStoragePath ?? null)
+      : (previousData.defaultScreenStoragePath ?? null);
+  const upload = await uploadFile(file, `settings/${kind}`);
   const payload =
     kind === "logo"
       ? { logoUrl: upload.url, logoStoragePath: upload.storagePath }
       : { defaultScreenUrl: upload.url, defaultScreenStoragePath: upload.storagePath };
   await setDoc(
-    doc(db, "settings", "general"),
+    settingsRef,
+    { ...payload, updatedAt: serverTimestamp(), schemaVersion: SCHEMA_VERSION },
+    { merge: true },
+  );
+  if (previousStoragePath && previousStoragePath !== upload.storagePath) {
+    await deleteStoredFile(previousStoragePath).catch(() => undefined);
+  }
+}
+
+export async function deleteSettingsImage(kind: "logo" | "defaultScreen") {
+  const db = getFirebaseDb();
+  const settingsRef = doc(db, "settings", "general");
+  const snapshot = await getDoc(settingsRef);
+  const data = snapshot.exists() ? (snapshot.data() as Partial<Settings>) : {};
+  const storagePath =
+    kind === "logo" ? (data.logoStoragePath ?? null) : (data.defaultScreenStoragePath ?? null);
+  if (storagePath) {
+    await deleteStoredFile(storagePath).catch(() => undefined);
+  }
+  const payload =
+    kind === "logo"
+      ? { logoUrl: null, logoStoragePath: null }
+      : { defaultScreenUrl: null, defaultScreenStoragePath: null };
+  await setDoc(
+    settingsRef,
     { ...payload, updatedAt: serverTimestamp(), schemaVersion: SCHEMA_VERSION },
     { merge: true },
   );
@@ -691,6 +724,17 @@ export async function deactivateRoom(room: Room) {
     deleteDoc(doc(db, "active_sessions", room.id)),
     deleteDoc(doc(db, "rooms", room.id)),
   ]);
+}
+
+export async function deleteRoomDevice(roomId: string) {
+  const db = getFirebaseDb();
+  const [deviceSnapshot, playerStatusSnapshot] = await Promise.all([
+    getDocs(query(collection(db, "devices"), where("roomId", "==", roomId))),
+    getDocs(query(collection(db, "player_status"), where("roomId", "==", roomId))),
+  ]);
+
+  await Promise.all(deviceSnapshot.docs.map((snapshot) => deleteDoc(snapshot.ref)));
+  await Promise.all(playerStatusSnapshot.docs.map((snapshot) => deleteDoc(snapshot.ref)));
 }
 
 export async function updateRoomSyncing(roomId: string) {
