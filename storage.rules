@@ -37,6 +37,11 @@ service firebase.storage {
       allow write, delete: if isAdmin();
     }
 
+    match /playlists/{playlistId}/tracks/{fileName} {
+      allow read: if adminOrPlayer();
+      allow write, delete: if isAdmin();
+    }
+
     match /{allPaths=**} {
       allow read, write: if false;
     }

@@ -9,7 +9,9 @@ import {
   query,
   serverTimestamp,
   setDoc,
+  Timestamp,
   updateDoc,
+  where,
   writeBatch,
   type DocumentData,
   type FirestoreError,
@@ -39,14 +41,7 @@ import {
 } from "@/types/memorial";
 
 type CollectionName =
-  | "rooms"
-  | "tributes"
-  | "active_sessions"
-  | "playlists"
-  | "player_status"
-  | "devices"
-  | "settings"
-  | "history";
+  "rooms" | "tributes" | "active_sessions" | "playlists" | "player_status" | "devices" | "settings";
 
 function withId<T>(snapshot: QueryDocumentSnapshot<DocumentData>) {
   return { id: snapshot.id, ...snapshot.data() } as T;
@@ -137,10 +132,9 @@ export async function ensureBootstrapData() {
   const playlistSnapshot = await getDocs(collection(db, "playlists"));
   const batch = writeBatch(db);
 
-  const existingRoomIds = new Set(roomSnapshot.docs.map((item) => item.id));
-  for (let number = 1; number <= ROOM_COUNT; number += 1) {
-    const id = `room-${String(number).padStart(2, "0")}`;
-    if (!existingRoomIds.has(id)) {
+  if (roomSnapshot.empty) {
+    for (let number = 1; number <= ROOM_COUNT; number += 1) {
+      const id = `room-${String(number).padStart(2, "0")}`;
       batch.set(doc(db, "rooms", id), {
         name: `Sala ${String(number).padStart(2, "0")}`,
         number,
@@ -261,24 +255,36 @@ export async function addPlaylistTrack(
     throw new Error("Playlist nao encontrada.");
   }
   const playlist = { id: playlistSnapshot.id, ...playlistSnapshot.data() } as Playlist;
-  const upload = await uploadFile(file, `playlists/${playlist.id}/tracks`, onProgress);
-  const nextTracks = normalizePlaylistTracks([
-    ...playlist.tracks,
-    {
-      id: crypto.randomUUID(),
-      name: upload.name,
-      url: upload.url,
-      storagePath: upload.storagePath,
-      duration: null,
-      order: playlist.tracks.length + 1,
-      createdAt: serverTimestamp(),
-    },
-  ]);
+  let uploadedStoragePath: string | null = null;
+  try {
+    const upload = await uploadFile(file, `playlists/${playlist.id}/tracks`, onProgress);
+    uploadedStoragePath = upload.storagePath;
+    const nextTracks = normalizePlaylistTracks([
+      ...playlist.tracks,
+      {
+        id: crypto.randomUUID(),
+        name: upload.name,
+        url: upload.url,
+        storagePath: upload.storagePath,
+        duration: null,
+        order: playlist.tracks.length + 1,
+        createdAt: Timestamp.now(),
+      },
+    ]);
 
-  await updateDoc(doc(db, "playlists", playlist.id), {
-    tracks: nextTracks,
-    updatedAt: serverTimestamp(),
-  });
+    await updateDoc(doc(db, "playlists", playlist.id), {
+      tracks: nextTracks,
+      updatedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    if (uploadedStoragePath) {
+      await deleteStoredFile(uploadedStoragePath).catch(() => undefined);
+    }
+    const reason = error instanceof Error ? error.message : "erro desconhecido";
+    throw new Error(
+      `Nao foi possivel enviar o arquivo "${file.name}" para a playlist "${playlist.name}": ${reason}`,
+    );
+  }
 }
 
 export async function removePlaylistTrack(playlistId: string, trackId: string) {
@@ -525,17 +531,10 @@ export async function startTribute(tribute: Tribute) {
 export async function endTribute(room: Room, tribute: Tribute) {
   const db = getFirebaseDb();
   const batch = writeBatch(db);
-  const historyRef = doc(db, "history", tribute.id);
   const tributeRef = doc(db, "tributes", tribute.id);
   const roomRef = doc(db, "rooms", room.id);
   const sessionRef = doc(db, "active_sessions", room.id);
 
-  batch.set(historyRef, {
-    ...tribute,
-    status: "ENDED",
-    endedAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  });
   batch.update(tributeRef, {
     status: "ENDED",
     endedAt: serverTimestamp(),
@@ -632,16 +631,32 @@ export async function createRoom(name: string) {
 }
 
 export async function deactivateRoom(room: Room) {
-  if (room.activeTributeId || room.status === "ACTIVE") {
-    throw new Error("Encerre a homenagem ativa antes de desativar esta sala.");
-  }
+  const db = getFirebaseDb();
 
-  await updateDoc(doc(getFirebaseDb(), "rooms", room.id), {
-    active: false,
-    status: "FREE",
-    activeTributeId: null,
-    updatedAt: serverTimestamp(),
-  });
+  const [tributeSnapshot, deviceSnapshot, playerStatusSnapshot] = await Promise.all([
+    getDocs(query(collection(db, "tributes"), where("roomId", "==", room.id))),
+    getDocs(query(collection(db, "devices"), where("roomId", "==", room.id))),
+    getDocs(query(collection(db, "player_status"), where("roomId", "==", room.id))),
+  ]);
+
+  await Promise.all(
+    tributeSnapshot.docs.map(async (snapshot) => {
+      const tribute = { id: snapshot.id, ...snapshot.data() } as Tribute;
+      await Promise.all([
+        ...tribute.photos.map((item) => deleteStoredFile(item.storagePath)),
+        ...tribute.videos.map((item) => deleteStoredFile(item.storagePath)),
+      ]);
+      await deleteDoc(snapshot.ref);
+    }),
+  );
+
+  await Promise.all(deviceSnapshot.docs.map((snapshot) => deleteDoc(snapshot.ref)));
+  await Promise.all(playerStatusSnapshot.docs.map((snapshot) => deleteDoc(snapshot.ref)));
+
+  await Promise.all([
+    deleteDoc(doc(db, "active_sessions", room.id)),
+    deleteDoc(doc(db, "rooms", room.id)),
+  ]);
 }
 
 export async function updateRoomSyncing(roomId: string) {

@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDown,
   ArrowUp,
@@ -415,12 +415,13 @@ function RoomManagerSheet({
   const [videos, setVideos] = useState<File[]>([]);
   const [playlistId, setPlaylistId] = useState("");
   const [playlistEditorOpen, setPlaylistEditorOpen] = useState(false);
-  const [editingPlaylist, setEditingPlaylist] = useState<Playlist | null>(null);
+  const [editingPlaylistId, setEditingPlaylistId] = useState<string | null>(null);
   const [slideDuration, setSlideDuration] = useState<SlideDuration>(5);
   const [saving, setSaving] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const activeTribute = roomView?.tribute ?? null;
   const selectedRoomId = roomView?.room.id ?? null;
+  const editingPlaylist = playlists.find((playlist) => playlist.id === editingPlaylistId) ?? null;
 
   useEffect(() => {
     if (!open || !selectedRoomId) return;
@@ -575,7 +576,7 @@ function RoomManagerSheet({
     setSaving(true);
     try {
       await endTribute(roomView.room, tribute);
-      toast.success("Homenagem encerrada e registrada no historico.");
+      toast.success("Homenagem encerrada.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Falha ao encerrar homenagem.");
     } finally {
@@ -600,7 +601,7 @@ function RoomManagerSheet({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
-        className="w-full overflow-y-auto border-border bg-surface p-0 sm:max-w-2xl"
+        className="scrollbar-hide w-full overflow-y-auto border-border bg-surface p-0 sm:max-w-2xl"
       >
         <SheetHeader className="border-b border-border px-6 py-5">
           <SheetTitle className="text-base font-semibold">
@@ -715,11 +716,11 @@ function RoomManagerSheet({
                 activePlaylistId={activeTribute?.playlistId ?? null}
                 onSelectPlaylist={setPlaylistId}
                 onCreatePlaylist={() => {
-                  setEditingPlaylist(null);
+                  setEditingPlaylistId(null);
                   setPlaylistEditorOpen(true);
                 }}
                 onEditPlaylist={(playlist) => {
-                  setEditingPlaylist(playlist);
+                  setEditingPlaylistId(playlist.id);
                   setPlaylistEditorOpen(true);
                 }}
               />
@@ -818,7 +819,7 @@ function RoomManagerSheet({
           onOpenChange={(open) => {
             setPlaylistEditorOpen(open);
             if (!open) {
-              setEditingPlaylist(null);
+              setEditingPlaylistId(null);
             }
           }}
           onSaved={(playlistId, created) => {
@@ -1041,6 +1042,7 @@ function MusicLibrarySection({
   onEditPlaylist: (playlist: Playlist) => void;
 }) {
   const grouped = groupPlaylistsByCategory(playlists);
+  const selectedPlaylist = playlists.find((playlist) => playlist.id === selectedPlaylistId) ?? null;
 
   return (
     <section className="space-y-3 rounded-md border border-border bg-background/45 p-4">
@@ -1058,6 +1060,40 @@ function MusicLibrarySection({
           <Plus className="mr-2 h-3.5 w-3.5" />
           Nova playlist
         </Button>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-surface/70 px-4 py-3">
+        <div className="min-w-0">
+          <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
+            Playlist da homenagem
+          </p>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <div className="min-w-[240px] flex-1">
+              <Select value={selectedPlaylistId} onValueChange={onSelectPlaylist}>
+                <SelectTrigger className="h-10">
+                  <SelectValue placeholder="Selecione a playlist" />
+                </SelectTrigger>
+                <SelectContent>
+                  {playlists.map((playlist) => (
+                    <SelectItem key={playlist.id} value={playlist.id}>
+                      {playlist.name} · {playlistCategoryLabel(playlist.category)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {selectedPlaylist && (
+              <>
+                <Badge variant="outline" className="h-5 rounded-sm px-1.5 text-[10px]">
+                  {playlistCategoryLabel(selectedPlaylist.category)}
+                </Badge>
+                <Badge className="h-5 rounded-sm border-primary/40 bg-primary/10 px-1.5 text-[10px] text-primary">
+                  escolhida
+                </Badge>
+              </>
+            )}
+          </div>
+        </div>
       </div>
 
       {playlists.length === 0 ? (
@@ -1081,15 +1117,12 @@ function MusicLibrarySection({
                       className={cn(
                         "rounded-md border px-3 py-3 transition-colors",
                         selected
-                          ? "border-primary/60 bg-primary/10"
+                          ? "border-primary/70 bg-primary/10 shadow-[0_0_0_1px_rgba(59,130,246,0.18)]"
                           : "border-border bg-surface/80 hover:bg-background",
                       )}
                     >
                       <div className="flex items-start justify-between gap-3">
-                        <button
-                          className="min-w-0 flex-1 text-left"
-                          onClick={() => onSelectPlaylist(playlist.id)}
-                        >
+                        <div className="min-w-0 flex-1 text-left">
                           <div className="flex items-center gap-2">
                             <span className="truncate text-sm font-medium">{playlist.name}</span>
                             {active && (
@@ -1101,15 +1134,17 @@ function MusicLibrarySection({
                           <div className="mt-1 text-xs text-muted-foreground">
                             {playlist.tracks.length} faixa(s)
                           </div>
-                        </button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-8 shrink-0"
-                          onClick={() => onEditPlaylist(playlist)}
-                        >
-                          <PencilLine className="h-3.5 w-3.5" />
-                        </Button>
+                        </div>
+                        <div className="flex shrink-0 flex-col gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8"
+                            onClick={() => onEditPlaylist(playlist)}
+                          >
+                            <PencilLine className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
                       </div>
                     </article>
                   );
@@ -1141,6 +1176,7 @@ function PlaylistEditorDialog({
   const [saving, setSaving] = useState(false);
   const [trackSaving, setTrackSaving] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const trackInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -1195,7 +1231,7 @@ function PlaylistEditorDialog({
     }
   }
 
-  async function handleAddTracks(files: FileList | null) {
+  async function handleAddTracks(files: File[]) {
     if (!playlist || !files || files.length === 0) return;
     setTrackSaving(true);
     try {
@@ -1204,7 +1240,8 @@ function PlaylistEditorDialog({
       }
       toast.success("Faixa(s) enviada(s).");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Falha ao enviar faixa.");
+      const message = error instanceof Error ? error.message : "Falha ao enviar faixa.";
+      toast.error(`Falha ao enviar MP3 para ${playlist.name}: ${message}`);
     } finally {
       setTrackSaving(false);
       setUploadProgress(0);
@@ -1238,7 +1275,7 @@ function PlaylistEditorDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto border-border bg-surface sm:max-w-2xl">
+      <DialogContent className="scrollbar-hide max-h-[90vh] overflow-y-auto border-border bg-surface sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>{playlist ? "Editar playlist" : "Nova playlist"}</DialogTitle>
         </DialogHeader>
@@ -1274,21 +1311,37 @@ function PlaylistEditorDialog({
                     Adicione MP3, remova ou reorganize a ordem de execucao.
                   </p>
                 </div>
-                <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-border bg-surface px-3 py-2 text-sm">
-                  <input
-                    type="file"
-                    accept="audio/mpeg,audio/mp3,.mp3"
-                    multiple
-                    className="hidden"
-                    onChange={(event) => {
-                      const files = event.target.files;
-                      event.target.value = "";
-                      void handleAddTracks(files);
-                    }}
-                  />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="h-9 gap-2"
+                  disabled={trackSaving}
+                  onClick={() => {
+                    const input = trackInputRef.current;
+                    if (!input) return;
+                    if (typeof input.showPicker === "function") {
+                      input.showPicker();
+                      return;
+                    }
+                    input.click();
+                  }}
+                >
                   <FileAudio className="h-4 w-4" />
                   Adicionar MP3
-                </label>
+                </Button>
+                <input
+                  ref={trackInputRef}
+                  type="file"
+                  accept="audio/mpeg,audio/mp3,audio/*,.mp3"
+                  multiple
+                  className="sr-only"
+                  onChange={(event) => {
+                    const files = Array.from(event.target.files ?? []);
+                    event.target.value = "";
+                    void handleAddTracks(files);
+                  }}
+                />
               </div>
 
               {trackSaving && (
@@ -1470,7 +1523,7 @@ function SettingsDialog({
   async function handleDeactivateRoom(view: RoomViewModel) {
     if (
       !window.confirm(
-        `Desativar ${view.room.name}? Ela saira do painel, mas historico e IDs serao preservados.`,
+        `Excluir ${view.room.name} e todos os dados vinculados? Isso remove homenagens, dispositivos e arquivos da sala.`,
       )
     ) {
       return;
@@ -1478,9 +1531,9 @@ function SettingsDialog({
     setSavingRooms(true);
     try {
       await deactivateRoom(view.room);
-      toast.success("Sala desativada.");
+      toast.success("Sala excluida.");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Falha ao desativar sala.");
+      toast.error(error instanceof Error ? error.message : "Falha ao excluir sala.");
     } finally {
       setSavingRooms(false);
     }
@@ -1512,7 +1565,7 @@ function SettingsDialog({
                 O nome visivel pode mudar. IDs e Players seguem estaveis para integracao.
               </p>
             </div>
-            <div className="grid max-h-64 gap-3 overflow-y-auto pr-1 md:grid-cols-2">
+            <div className="scrollbar-hide grid max-h-64 gap-3 overflow-y-auto pr-1 md:grid-cols-2">
               {rooms.map((view) => (
                 <div key={view.room.id} className="space-y-2">
                   <Field
@@ -1537,7 +1590,7 @@ function SettingsDialog({
                     onClick={() => handleDeactivateRoom(view)}
                   >
                     <Trash2 className="mr-2 h-3.5 w-3.5" />
-                    Desativar sala
+                    Excluir sala
                   </Button>
                   <div className="rounded-md border border-border bg-background/45 px-3 py-2 text-xs text-muted-foreground">
                     {view.device
@@ -1632,7 +1685,7 @@ function CreateRoomDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="border-border bg-surface sm:max-w-lg">
+      <DialogContent className="scrollbar-hide border-border bg-surface sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Nova sala</DialogTitle>
         </DialogHeader>
