@@ -23,6 +23,8 @@ import {
   Trash2,
   Upload,
   Video,
+  Volume2,
+  VolumeX,
   Wifi,
   WifiOff,
   X,
@@ -305,6 +307,11 @@ function MediaSettingCard({
   );
 }
 
+type VideoDraftItem = {
+  file: File;
+  muted: boolean;
+};
+
 function RoomCard({ view, onManage }: { view: RoomViewModel; onManage: () => void }) {
   const mediaCount = (view.tribute?.photos.length ?? 0) + (view.tribute?.videos.length ?? 0);
   const currentPhoto = view.tribute?.photos[0];
@@ -475,7 +482,7 @@ function RoomManagerSheet({
   const [existingPhotos, setExistingPhotos] = useState<MediaItem[]>([]);
   const [existingVideos, setExistingVideos] = useState<MediaItem[]>([]);
   const [photos, setPhotos] = useState<File[]>([]);
-  const [videos, setVideos] = useState<File[]>([]);
+  const [videos, setVideos] = useState<VideoDraftItem[]>([]);
   const [playlistId, setPlaylistId] = useState("");
   const [playlistEditorOpen, setPlaylistEditorOpen] = useState(false);
   const [editingPlaylistId, setEditingPlaylistId] = useState<string | null>(null);
@@ -493,7 +500,7 @@ function RoomManagerSheet({
     setPlaylistId(activeTribute?.playlistId ?? playlists[0]?.id ?? "");
     setSlideDuration(activeTribute?.slideDuration ?? 5);
     setExistingPhotos(sortMedia(activeTribute?.photos ?? []));
-    setExistingVideos(sortMedia(activeTribute?.videos ?? []));
+    setExistingVideos(sortMedia(activeTribute?.videos ?? []).map(normalizeVideoItem));
     setPhotos([]);
     setVideos([]);
     setUploadProgress(0);
@@ -576,13 +583,13 @@ function RoomManagerSheet({
 
   async function handleVideoFiles(files: FileList | null) {
     if (!files) return;
-    const checked: File[] = [];
+    const checked: VideoDraftItem[] = [];
     for (const file of Array.from(files).filter((item) => item.type.startsWith("video/"))) {
       const duration = await readVideoDuration(file);
       if (duration > MAX_VIDEO_SECONDS) {
         toast.error(`${file.name} ultrapassa 1 minuto.`);
       } else {
-        checked.push(file);
+        checked.push({ file, muted: true });
       }
     }
     setVideos((current) => [...current, ...checked]);
@@ -830,21 +837,34 @@ function RoomManagerSheet({
                 onRemove={(id) =>
                   setExistingVideos((items) => items.filter((item) => item.id !== id))
                 }
+                onToggleMuted={(id, muted) =>
+                  setExistingVideos((items) =>
+                    items.map((item) => (item.id === id ? { ...item, videoMuted: muted } : item)),
+                  )
+                }
                 onReplace={async (id, file) => {
                   const duration = await readVideoDuration(file);
                   if (duration > MAX_VIDEO_SECONDS) {
                     toast.error(`${file.name} ultrapassa 1 minuto.`);
                     return;
                   }
+                  const nextMuted =
+                    existingVideos.find((item) => item.id === id)?.videoMuted ?? true;
                   setExistingVideos((items) => items.filter((item) => item.id !== id));
-                  setVideos((items) => [...items, file]);
+                  setVideos((items) => [...items, { file, muted: nextMuted }]);
                   toast.success("Video marcado para troca.");
                 }}
               />
-              <FileList
-                files={videos}
-                kind="video"
+              <VideoDraftList
+                items={videos}
                 onRemove={(index) => setVideos((items) => items.filter((_, i) => i !== index))}
+                onToggleMuted={(index) =>
+                  setVideos((items) =>
+                    items.map((item, currentIndex) =>
+                      currentIndex === index ? { ...item, muted: !item.muted } : item,
+                    ),
+                  )
+                }
               />
             </TabsContent>
           </Tabs>
@@ -952,12 +972,14 @@ function SavedMediaList({
   saving,
   onRemove,
   onReplace,
+  onToggleMuted,
 }: {
   items: MediaItem[];
   kind: "photo" | "video";
   saving: boolean;
   onRemove: (id: string) => void;
   onReplace: (id: string, file: File) => void | Promise<void>;
+  onToggleMuted?: (id: string, muted: boolean) => void;
 }) {
   if (items.length === 0) return null;
   const accept = kind === "photo" ? ".jpg,.jpeg,.png,.webp,image/*" : "video/*";
@@ -987,16 +1009,37 @@ function SavedMediaList({
                 <video
                   src={item.url}
                   className="h-full w-full object-cover"
-                  muted
+                  muted={item.videoMuted !== false}
                   preload="metadata"
                 />
               )}
               <Badge className="absolute left-2 top-2 rounded-sm bg-black/70 text-white">
                 {String(index + 1).padStart(2, "0")}
               </Badge>
+              {kind === "video" && (
+                <Badge className="absolute right-2 top-2 rounded-sm bg-black/70 text-white">
+                  {item.videoMuted === false ? "Com som" : "Mutado"}
+                </Badge>
+              )}
             </div>
             <div className="space-y-2 p-3">
               <div className="truncate text-sm font-medium">{item.name}</div>
+              {kind === "video" && onToggleMuted && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 w-full justify-start"
+                  disabled={saving}
+                  onClick={() => onToggleMuted(item.id, item.videoMuted === false)}
+                >
+                  {item.videoMuted === false ? (
+                    <VolumeX className="mr-2 h-3.5 w-3.5" />
+                  ) : (
+                    <Volume2 className="mr-2 h-3.5 w-3.5" />
+                  )}
+                  {item.videoMuted === false ? "Mutar video" : "Ativar som"}
+                </Button>
+              )}
               <div className="grid grid-cols-2 gap-2">
                 <Button asChild variant="secondary" size="sm" className="h-8" disabled={saving}>
                   <label>
@@ -1058,11 +1101,63 @@ function FileList({
             {String(index + 1).padStart(2, "0")} · {file.name}
           </span>
           <button
+            type="button"
             className="text-muted-foreground hover:text-foreground"
             onClick={() => onRemove(index)}
           >
             <X className="h-4 w-4" />
           </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function VideoDraftList({
+  items,
+  onRemove,
+  onToggleMuted,
+}: {
+  items: VideoDraftItem[];
+  onRemove: (index: number) => void;
+  onToggleMuted: (index: number) => void;
+}) {
+  if (items.length === 0) return null;
+  return (
+    <div className="space-y-2">
+      <div className="text-xs text-muted-foreground">Videos novos</div>
+      {items.map((item, index) => (
+        <div
+          key={`${item.file.name}-${index}`}
+          className="grid grid-cols-[44px_1fr_auto] items-center gap-3 rounded-md border border-border bg-background/45 px-3 py-2 text-sm"
+        >
+          <FilePreview file={item.file} kind="video" />
+          <span className="truncate">
+            {String(index + 1).padStart(2, "0")} · {item.file.name}
+          </span>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              className="h-8 px-3"
+              onClick={() => onToggleMuted(index)}
+            >
+              {item.muted ? (
+                <VolumeX className="mr-2 h-3.5 w-3.5" />
+              ) : (
+                <Volume2 className="mr-2 h-3.5 w-3.5" />
+              )}
+              {item.muted ? "Mutado" : "Com som"}
+            </Button>
+            <button
+              type="button"
+              className="text-muted-foreground hover:text-foreground"
+              onClick={() => onRemove(index)}
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
         </div>
       ))}
     </div>
@@ -1907,6 +2002,13 @@ function formatDateTime(date: Date) {
 
 function sortMedia(items: MediaItem[]) {
   return items.slice().sort((a, b) => a.order - b.order);
+}
+
+function normalizeVideoItem(item: MediaItem) {
+  return {
+    ...item,
+    videoMuted: item.videoMuted ?? true,
+  };
 }
 
 function getPlayerUrl(room: Room) {

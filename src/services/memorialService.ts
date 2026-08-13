@@ -363,7 +363,7 @@ export async function createTribute(
 
   const videos: MediaItem[] = [];
   for (const [index, file] of draft.videos.entries()) {
-    const upload = await uploadFile(file, `${baseFolder}/videos`, reportProgress);
+    const upload = await uploadFile(file.file, `${baseFolder}/videos`, reportProgress);
     completed += 1;
     videos.push({
       id: crypto.randomUUID(),
@@ -372,6 +372,7 @@ export async function createTribute(
       storagePath: upload.storagePath,
       type: "video",
       order: index + 1,
+      videoMuted: file.muted,
       createdAt: null,
     });
   }
@@ -438,7 +439,7 @@ export async function updateTribute(
     order: index + 1,
   }));
   for (const [index, file] of draft.videos.entries()) {
-    const upload = await uploadFile(file, `${baseFolder}/videos`, reportProgress);
+    const upload = await uploadFile(file.file, `${baseFolder}/videos`, reportProgress);
     completed += 1;
     nextVideos.push({
       id: crypto.randomUUID(),
@@ -447,6 +448,7 @@ export async function updateTribute(
       storagePath: upload.storagePath,
       type: "video",
       order: retainedVideos.length + index + 1,
+      videoMuted: file.muted,
       createdAt: null,
     });
   }

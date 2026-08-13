@@ -52,6 +52,7 @@ export interface MediaItem {
   type: MediaType;
   order: number;
   duration?: number;
+  videoMuted?: boolean;
   createdAt: Timestamp | null;
 }
 
@@ -163,7 +164,10 @@ export interface TributeDraft {
   existingPhotos?: MediaItem[];
   existingVideos?: MediaItem[];
   photos: File[];
-  videos: File[];
+  videos: Array<{
+    file: File;
+    muted: boolean;
+  }>;
   playlistId: string;
   slideDuration: SlideDuration;
   notes: string;
