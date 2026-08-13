@@ -93,10 +93,11 @@ export function useMemorialData(userReady: boolean) {
       .map((room) => {
         const activeSession = activeSessions.find((session) => session.roomId === room.id) ?? null;
         const activeSessionTribute = activeSession
-          ? tributes.find((item) => item.id === activeSession.tributeId) ?? null
+          ? (tributes.find((item) => item.id === activeSession.tributeId) ?? null)
           : null;
         const roomActiveTribute =
-          tributes.find((item) => item.id === room.activeTributeId && item.status !== "ENDED") ?? null;
+          tributes.find((item) => item.id === room.activeTributeId && item.status !== "ENDED") ??
+          null;
         const createdTribute =
           tributes
             .filter((item) => item.roomId === room.id && item.status === "CREATED")

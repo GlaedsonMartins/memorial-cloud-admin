@@ -67,6 +67,7 @@ import {
   ALLOWED_SLIDE_DURATIONS,
   MAX_PHOTOS_PER_TRIBUTE,
   MAX_VIDEO_SECONDS,
+  type MediaItem,
   type Playlist,
   type Room,
   type RoomViewModel,
@@ -398,32 +399,49 @@ function RoomManagerSheet({
 }) {
   const [name, setName] = useState("");
   const [notes, setNotes] = useState("");
+  const [existingPhotos, setExistingPhotos] = useState<MediaItem[]>([]);
+  const [existingVideos, setExistingVideos] = useState<MediaItem[]>([]);
   const [photos, setPhotos] = useState<File[]>([]);
   const [videos, setVideos] = useState<File[]>([]);
   const [playlistId, setPlaylistId] = useState("");
   const [slideDuration, setSlideDuration] = useState<SlideDuration>(5);
   const [saving, setSaving] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const activeTribute = roomView?.tribute ?? null;
+  const selectedRoomId = roomView?.room.id ?? null;
 
   useEffect(() => {
-    if (!open || !roomView) return;
-    setName(roomView.tribute?.name ?? "");
-    setNotes(roomView.tribute?.notes ?? "");
-    setPlaylistId(roomView.tribute?.playlistId ?? playlists[0]?.id ?? "");
-    setSlideDuration(roomView.tribute?.slideDuration ?? 5);
+    if (!open || !selectedRoomId) return;
+    setName(activeTribute?.name ?? "");
+    setNotes(activeTribute?.notes ?? "");
+    setPlaylistId(activeTribute?.playlistId ?? playlists[0]?.id ?? "");
+    setSlideDuration(activeTribute?.slideDuration ?? 5);
+    setExistingPhotos(sortMedia(activeTribute?.photos ?? []));
+    setExistingVideos(sortMedia(activeTribute?.videos ?? []));
     setPhotos([]);
     setVideos([]);
     setUploadProgress(0);
-  }, [open, playlists, roomView]);
+  }, [activeTribute, open, playlists, selectedRoomId]);
 
-  const activeTribute = roomView?.tribute ?? null;
+  const totalPhotos = existingPhotos.length + photos.length;
   const canSubmit = Boolean(
-    roomView && name.trim() && playlistId && !saving && (activeTribute || photos.length > 0),
+    roomView &&
+    name.trim() &&
+    playlistId &&
+    !saving &&
+    (activeTribute ? totalPhotos > 0 : photos.length > 0),
   );
 
   async function handlePhotoFiles(files: FileList | null) {
     if (!files) return;
-    const allowedPhotoTypes = ["image/jpeg", "image/jpg", "image/png", "image/webp", "image/pjpeg", "image/x-png"];
+    const allowedPhotoTypes = [
+      "image/jpeg",
+      "image/jpg",
+      "image/png",
+      "image/webp",
+      "image/pjpeg",
+      "image/x-png",
+    ];
     const allowedPhotoExtensions = [".jpg", ".jpeg", ".png", ".webp"];
     const acceptedFiles: File[] = [];
     const rejectedFiles: File[] = [];
@@ -431,9 +449,7 @@ function RoomManagerSheet({
     for (const file of Array.from(files)) {
       const typeAllowed = allowedPhotoTypes.includes(file.type);
       const extension = String(file.name).toLowerCase().split(".").pop();
-      const extensionAllowed = extension
-        ? allowedPhotoExtensions.includes(`.${extension}`)
-        : false;
+      const extensionAllowed = extension ? allowedPhotoExtensions.includes(`.${extension}`) : false;
       if (typeAllowed || extensionAllowed) {
         acceptedFiles.push(file);
       } else {
@@ -442,22 +458,27 @@ function RoomManagerSheet({
     }
 
     if (rejectedFiles.length > 0) {
-      toast.error(
-        `${rejectedFiles.length} arquivo(s) nao aceito(s). Use JPG, PNG ou WEBP.`,
-      );
+      toast.error(`${rejectedFiles.length} arquivo(s) nao aceito(s). Use JPG, PNG ou WEBP.`);
     }
 
     if (acceptedFiles.length === 0) {
       return;
     }
 
-    const available = MAX_PHOTOS_PER_TRIBUTE - photos.length;
+    const available = MAX_PHOTOS_PER_TRIBUTE - existingPhotos.length - photos.length;
+    if (available <= 0) {
+      toast.warning(`Limite de ${MAX_PHOTOS_PER_TRIBUTE} fotos por homenagem.`);
+      return;
+    }
+
     if (acceptedFiles.length > available) {
       toast.warning(`Limite de ${MAX_PHOTOS_PER_TRIBUTE} fotos por homenagem.`);
     }
 
     setPhotos((current) => [...current, ...acceptedFiles.slice(0, available)]);
-    toast.success(`${Math.min(acceptedFiles.length, available)} foto(s) adicionada(s) ao rascunho.`);
+    toast.success(
+      `${Math.min(acceptedFiles.length, available)} foto(s) adicionada(s) ao rascunho.`,
+    );
   }
 
   async function handleVideoFiles(files: FileList | null) {
@@ -482,6 +503,8 @@ function RoomManagerSheet({
         roomId: roomView.room.id,
         name: name.trim(),
         notes: notes.trim(),
+        existingPhotos,
+        existingVideos,
         photos,
         videos,
         playlistId,
@@ -659,27 +682,60 @@ function RoomManagerSheet({
             <TabsContent value="media" className="mt-5 space-y-4">
               <UploadBox
                 icon={<ImageIcon className="h-4 w-4" />}
-                title="Fotos"
+                title="Adicionar fotos"
                 description="JPG, PNG ou WEBP · maximo 20"
                 accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/jpg,image/png,image/webp,image/*"
                 multiple
                 onChange={handlePhotoFiles}
               />
+              <SavedMediaList
+                items={existingPhotos}
+                kind="photo"
+                saving={saving}
+                onRemove={(id) =>
+                  setExistingPhotos((items) => items.filter((item) => item.id !== id))
+                }
+                onReplace={(id, file) => {
+                  setExistingPhotos((items) => items.filter((item) => item.id !== id));
+                  setPhotos((items) => [...items, file]);
+                  toast.success("Foto marcada para troca.");
+                }}
+              />
               <FileList
                 files={photos}
+                kind="photo"
                 onRemove={(index) => setPhotos((items) => items.filter((_, i) => i !== index))}
               />
 
               <UploadBox
                 icon={<Video className="h-4 w-4" />}
-                title="Videos opcionais"
+                title="Adicionar videos"
                 description="Videos de ate 1 minuto"
                 accept="video/*"
                 multiple
                 onChange={handleVideoFiles}
               />
+              <SavedMediaList
+                items={existingVideos}
+                kind="video"
+                saving={saving}
+                onRemove={(id) =>
+                  setExistingVideos((items) => items.filter((item) => item.id !== id))
+                }
+                onReplace={async (id, file) => {
+                  const duration = await readVideoDuration(file);
+                  if (duration > MAX_VIDEO_SECONDS) {
+                    toast.error(`${file.name} ultrapassa 1 minuto.`);
+                    return;
+                  }
+                  setExistingVideos((items) => items.filter((item) => item.id !== id));
+                  setVideos((items) => [...items, file]);
+                  toast.success("Video marcado para troca.");
+                }}
+              />
               <FileList
                 files={videos}
+                kind="video"
                 onRemove={(index) => setVideos((items) => items.filter((_, i) => i !== index))}
               />
             </TabsContent>
@@ -760,15 +816,114 @@ function UploadBox({
   );
 }
 
-function FileList({ files, onRemove }: { files: File[]; onRemove: (index: number) => void }) {
+function SavedMediaList({
+  items,
+  kind,
+  saving,
+  onRemove,
+  onReplace,
+}: {
+  items: MediaItem[];
+  kind: "photo" | "video";
+  saving: boolean;
+  onRemove: (id: string) => void;
+  onReplace: (id: string, file: File) => void | Promise<void>;
+}) {
+  if (items.length === 0) return null;
+  const accept = kind === "photo" ? ".jpg,.jpeg,.png,.webp,image/*" : "video/*";
+  const title = kind === "photo" ? "Fotos carregadas" : "Videos carregados";
+
+  return (
+    <section className="space-y-2">
+      <div className="flex items-center justify-between text-xs text-muted-foreground">
+        <span>{title}</span>
+        <span className="tabular-nums">{items.length}</span>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {items.map((item, index) => (
+          <div
+            key={item.id}
+            className="overflow-hidden rounded-md border border-border bg-background/45"
+          >
+            <div className="relative aspect-video bg-black/70">
+              {kind === "photo" ? (
+                <img
+                  src={item.url}
+                  alt={item.name}
+                  className="h-full w-full object-cover"
+                  loading="lazy"
+                />
+              ) : (
+                <video
+                  src={item.url}
+                  className="h-full w-full object-cover"
+                  muted
+                  preload="metadata"
+                />
+              )}
+              <Badge className="absolute left-2 top-2 rounded-sm bg-black/70 text-white">
+                {String(index + 1).padStart(2, "0")}
+              </Badge>
+            </div>
+            <div className="space-y-2 p-3">
+              <div className="truncate text-sm font-medium">{item.name}</div>
+              <div className="grid grid-cols-2 gap-2">
+                <Button asChild variant="secondary" size="sm" className="h-8" disabled={saving}>
+                  <label>
+                    <input
+                      type="file"
+                      className="hidden"
+                      accept={accept}
+                      onChange={(event) => {
+                        const file = event.target.files?.[0];
+                        event.target.value = "";
+                        if (file) void onReplace(item.id, file);
+                      }}
+                    />
+                    <Upload className="h-3.5 w-3.5" />
+                    Trocar
+                  </label>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 border-destructive/40 text-destructive hover:bg-destructive/10"
+                  disabled={saving}
+                  onClick={() => onRemove(item.id)}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Excluir
+                </Button>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function FileList({
+  files,
+  kind,
+  onRemove,
+}: {
+  files: File[];
+  kind: "photo" | "video";
+  onRemove: (index: number) => void;
+}) {
   if (files.length === 0) return null;
   return (
     <div className="space-y-2">
+      <div className="text-xs text-muted-foreground">
+        {kind === "photo" ? "Fotos novas" : "Videos novos"}
+      </div>
       {files.map((file, index) => (
         <div
           key={`${file.name}-${index}`}
-          className="flex items-center justify-between gap-3 rounded-md border border-border bg-background/45 px-3 py-2 text-sm"
+          className="grid grid-cols-[44px_1fr_auto] items-center gap-3 rounded-md border border-border bg-background/45 px-3 py-2 text-sm"
         >
+          <FilePreview file={file} kind={kind} />
           <span className="truncate">
             {String(index + 1).padStart(2, "0")} · {file.name}
           </span>
@@ -780,6 +935,26 @@ function FileList({ files, onRemove }: { files: File[]; onRemove: (index: number
           </button>
         </div>
       ))}
+    </div>
+  );
+}
+
+function FilePreview({ file, kind }: { file: File; kind: "photo" | "video" }) {
+  const [url, setUrl] = useState("");
+
+  useEffect(() => {
+    const nextUrl = URL.createObjectURL(file);
+    setUrl(nextUrl);
+    return () => URL.revokeObjectURL(nextUrl);
+  }, [file]);
+
+  return (
+    <div className="aspect-square overflow-hidden rounded-sm border border-border bg-black/70">
+      {kind === "photo" ? (
+        <img src={url} alt={file.name} className="h-full w-full object-cover" />
+      ) : (
+        <video src={url} className="h-full w-full object-cover" muted preload="metadata" />
+      )}
     </div>
   );
 }
@@ -1111,6 +1286,10 @@ function formatDateTime(date: Date) {
     dateStyle: "short",
     timeStyle: "short",
   }).format(date);
+}
+
+function sortMedia(items: MediaItem[]) {
+  return items.slice().sort((a, b) => a.order - b.order);
 }
 
 function getPlayerUrl(room: Room) {

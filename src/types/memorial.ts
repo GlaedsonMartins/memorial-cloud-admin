@@ -160,6 +160,8 @@ export interface RoomViewModel {
 export interface TributeDraft {
   roomId: string;
   name: string;
+  existingPhotos?: MediaItem[];
+  existingVideos?: MediaItem[];
   photos: File[];
   videos: File[];
   playlistId: string;

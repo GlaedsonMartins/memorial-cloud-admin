@@ -260,13 +260,18 @@ export async function updateTribute(
   const baseFolder = `tributes/${tribute.id}`;
   const totalFiles = draft.photos.length + draft.videos.length;
   let completed = 0;
+  const retainedPhotos = draft.existingPhotos ?? tribute.photos;
+  const retainedVideos = draft.existingVideos ?? tribute.videos;
 
   const reportProgress = (fileProgress: number) => {
     if (totalFiles === 0) return onProgress?.(100);
     onProgress?.(Math.round((completed * 100 + fileProgress) / totalFiles));
   };
 
-  const nextPhotos: MediaItem[] = [...tribute.photos];
+  const nextPhotos: MediaItem[] = retainedPhotos.map((item, index) => ({
+    ...item,
+    order: index + 1,
+  }));
   for (const [index, file] of draft.photos.entries()) {
     const upload = await uploadFile(file, `${baseFolder}/photos`, reportProgress);
     completed += 1;
@@ -276,12 +281,15 @@ export async function updateTribute(
       url: upload.url,
       storagePath: upload.storagePath,
       type: "image",
-      order: tribute.photos.length + index + 1,
+      order: retainedPhotos.length + index + 1,
       createdAt: null,
     });
   }
 
-  const nextVideos: MediaItem[] = [...tribute.videos];
+  const nextVideos: MediaItem[] = retainedVideos.map((item, index) => ({
+    ...item,
+    order: index + 1,
+  }));
   for (const [index, file] of draft.videos.entries()) {
     const upload = await uploadFile(file, `${baseFolder}/videos`, reportProgress);
     completed += 1;
@@ -291,7 +299,7 @@ export async function updateTribute(
       url: upload.url,
       storagePath: upload.storagePath,
       type: "video",
-      order: tribute.videos.length + index + 1,
+      order: retainedVideos.length + index + 1,
       createdAt: null,
     });
   }
@@ -323,7 +331,20 @@ export async function updateTribute(
   }
 
   await batch.commit();
+  await Promise.all([
+    ...findRemovedMedia(tribute.photos, retainedPhotos).map((item) =>
+      deleteStoredFile(item.storagePath),
+    ),
+    ...findRemovedMedia(tribute.videos, retainedVideos).map((item) =>
+      deleteStoredFile(item.storagePath),
+    ),
+  ]);
   onProgress?.(100);
+}
+
+function findRemovedMedia(previous: MediaItem[], retained: MediaItem[]) {
+  const retainedIds = new Set(retained.map((item) => item.id));
+  return previous.filter((item) => !retainedIds.has(item.id));
 }
 
 export async function startTribute(tribute: Tribute) {
