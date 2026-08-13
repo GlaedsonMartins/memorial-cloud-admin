@@ -18,8 +18,7 @@ import {
   type QueryDocumentSnapshot,
   type Unsubscribe,
 } from "firebase/firestore";
-import { httpsCallable } from "firebase/functions";
-import { getFirebaseDb, getFirebaseFunctions } from "@/firebase/client";
+import { getFirebaseDb } from "@/firebase/client";
 import {
   deleteStoredFile,
   uploadFile,
@@ -622,12 +621,47 @@ export async function createRoom(name: string) {
     throw new Error("O nome da sala deve ter no maximo 40 caracteres.");
   }
 
-  const callable = httpsCallable<{ name: string }, CreateRoomResult>(
-    getFirebaseFunctions(),
-    "createRoom",
+  const db = getFirebaseDb();
+  const roomSnapshot = await getDocs(collection(db, "rooms"));
+  const occupiedNumbers = new Set(
+    roomSnapshot.docs
+      .map((snapshot) => {
+        const data = snapshot.data() as Partial<Room>;
+        return typeof data.number === "number" ? data.number : null;
+      })
+      .filter((value): value is number => value !== null),
   );
-  const result = await callable({ name: trimmedName });
-  return result.data;
+  const number = Array.from({ length: ROOM_COUNT }, (_, index) => index + 1).find(
+    (value) => !occupiedNumbers.has(value),
+  );
+
+  if (!number) {
+    throw new Error("Nao ha salas disponiveis para criar uma nova.");
+  }
+
+  const roomId = `room-${String(number).padStart(2, "0")}`;
+  const playerId = `player-${String(number).padStart(2, "0")}`;
+
+  await setDoc(doc(db, "rooms", roomId), {
+    name: trimmedName,
+    number,
+    playerId,
+    playerUrl: `/sala/${number}`,
+    active: true,
+    status: "FREE",
+    activeTributeId: null,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+    createdBy: null,
+    schemaVersion: SCHEMA_VERSION,
+  });
+
+  return {
+    roomId,
+    playerId,
+    number,
+    playerUrl: `/sala/${number}`,
+  } satisfies CreateRoomResult;
 }
 
 export async function deactivateRoom(room: Room) {
