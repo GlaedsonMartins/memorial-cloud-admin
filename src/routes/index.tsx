@@ -1,10 +1,13 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import {
+  ArrowDown,
+  ArrowUp,
   Activity,
   AlertTriangle,
   Copy,
   Clock,
+  FileAudio,
   Image as ImageIcon,
   KeyRound,
   Loader2,
@@ -13,6 +16,7 @@ import {
   Play,
   Plus,
   Radio,
+  PencilLine,
   Save,
   Settings as SettingsIcon,
   Square,
@@ -54,12 +58,18 @@ import { signOutAdmin } from "@/services/authService";
 import {
   createRoom,
   createTribute,
+  createPlaylist,
   deactivateRoom,
   deleteTribute,
+  deletePlaylist,
+  addPlaylistTrack,
   endTribute,
+  movePlaylistTrack,
+  removePlaylistTrack,
   saveSettings,
   startTribute,
   updateTribute,
+  updatePlaylist,
   updateRoomName,
   uploadSettingsImage,
 } from "@/services/memorialService";
@@ -404,6 +414,8 @@ function RoomManagerSheet({
   const [photos, setPhotos] = useState<File[]>([]);
   const [videos, setVideos] = useState<File[]>([]);
   const [playlistId, setPlaylistId] = useState("");
+  const [playlistEditorOpen, setPlaylistEditorOpen] = useState(false);
+  const [editingPlaylist, setEditingPlaylist] = useState<Playlist | null>(null);
   const [slideDuration, setSlideDuration] = useState<SlideDuration>(5);
   const [saving, setSaving] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -422,6 +434,23 @@ function RoomManagerSheet({
     setVideos([]);
     setUploadProgress(0);
   }, [activeTribute, open, playlists, selectedRoomId]);
+
+  useEffect(() => {
+    if (!open) return;
+    if (playlists.length === 0) {
+      if (playlistId !== "") setPlaylistId("");
+      return;
+    }
+
+    const playlistExists = playlists.some((item) => item.id === playlistId);
+    if (!playlistExists) {
+      setPlaylistId(
+        activeTribute?.playlistId && playlists.some((item) => item.id === activeTribute.playlistId)
+          ? activeTribute.playlistId
+          : (playlists[0]?.id ?? ""),
+      );
+    }
+  }, [activeTribute?.playlistId, open, playlistId, playlists]);
 
   const totalPhotos = existingPhotos.length + photos.length;
   const canSubmit = Boolean(
@@ -680,6 +709,21 @@ function RoomManagerSheet({
             </TabsContent>
 
             <TabsContent value="media" className="mt-5 space-y-4">
+              <MusicLibrarySection
+                playlists={playlists}
+                selectedPlaylistId={playlistId}
+                activePlaylistId={activeTribute?.playlistId ?? null}
+                onSelectPlaylist={setPlaylistId}
+                onCreatePlaylist={() => {
+                  setEditingPlaylist(null);
+                  setPlaylistEditorOpen(true);
+                }}
+                onEditPlaylist={(playlist) => {
+                  setEditingPlaylist(playlist);
+                  setPlaylistEditorOpen(true);
+                }}
+              />
+
               <UploadBox
                 icon={<ImageIcon className="h-4 w-4" />}
                 title="Adicionar fotos"
@@ -767,6 +811,28 @@ function RoomManagerSheet({
             {activeTribute ? "Atualizar homenagem" : "Criar homenagem"}
           </Button>
         </div>
+
+        <PlaylistEditorDialog
+          open={playlistEditorOpen}
+          playlist={editingPlaylist}
+          onOpenChange={(open) => {
+            setPlaylistEditorOpen(open);
+            if (!open) {
+              setEditingPlaylist(null);
+            }
+          }}
+          onSaved={(playlistId, created) => {
+            if (created) {
+              setPlaylistId(playlistId);
+            }
+          }}
+          onDeleted={(deletedPlaylistId) => {
+            setPlaylistId((current) => {
+              if (current !== deletedPlaylistId) return current;
+              return playlists.find((item) => item.id !== deletedPlaylistId)?.id ?? "";
+            });
+          }}
+        />
       </SheetContent>
     </Sheet>
   );
@@ -957,6 +1023,377 @@ function FilePreview({ file, kind }: { file: File; kind: "photo" | "video" }) {
       )}
     </div>
   );
+}
+
+function MusicLibrarySection({
+  playlists,
+  selectedPlaylistId,
+  activePlaylistId,
+  onSelectPlaylist,
+  onCreatePlaylist,
+  onEditPlaylist,
+}: {
+  playlists: Playlist[];
+  selectedPlaylistId: string;
+  activePlaylistId: string | null;
+  onSelectPlaylist: (playlistId: string) => void;
+  onCreatePlaylist: () => void;
+  onEditPlaylist: (playlist: Playlist) => void;
+}) {
+  const grouped = groupPlaylistsByCategory(playlists);
+
+  return (
+    <section className="space-y-3 rounded-md border border-border bg-background/45 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2 text-sm font-semibold">
+            <Music className="h-4 w-4" />
+            Musica de fundo
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Selecione a playlist que vai tocar junto do slide.
+          </p>
+        </div>
+        <Button variant="secondary" size="sm" className="h-8" onClick={onCreatePlaylist}>
+          <Plus className="mr-2 h-3.5 w-3.5" />
+          Nova playlist
+        </Button>
+      </div>
+
+      {playlists.length === 0 ? (
+        <div className="rounded-md border border-dashed border-border bg-background/60 px-4 py-5 text-sm text-muted-foreground">
+          Nenhuma playlist cadastrada.
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {(["CATOLICA", "EVANGELICA"] as const).map((category) => (
+            <div key={category} className="space-y-2">
+              <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                {playlistCategoryLabel(category)}
+              </div>
+              <div className="grid gap-2 md:grid-cols-2">
+                {grouped[category].map((playlist) => {
+                  const selected = playlist.id === selectedPlaylistId;
+                  const active = playlist.id === activePlaylistId;
+                  return (
+                    <article
+                      key={playlist.id}
+                      className={cn(
+                        "rounded-md border px-3 py-3 transition-colors",
+                        selected
+                          ? "border-primary/60 bg-primary/10"
+                          : "border-border bg-surface/80 hover:bg-background",
+                      )}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <button
+                          className="min-w-0 flex-1 text-left"
+                          onClick={() => onSelectPlaylist(playlist.id)}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="truncate text-sm font-medium">{playlist.name}</span>
+                            {active && (
+                              <Badge className="h-5 rounded-sm border-status-live/40 bg-status-live/15 px-1.5 text-[10px] text-status-live">
+                                ativa
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="mt-1 text-xs text-muted-foreground">
+                            {playlist.tracks.length} faixa(s)
+                          </div>
+                        </button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 shrink-0"
+                          onClick={() => onEditPlaylist(playlist)}
+                        >
+                          <PencilLine className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function PlaylistEditorDialog({
+  open,
+  playlist,
+  onOpenChange,
+  onSaved,
+  onDeleted,
+}: {
+  open: boolean;
+  playlist: Playlist | null;
+  onOpenChange: (open: boolean) => void;
+  onSaved: (playlistId: string, created: boolean) => void;
+  onDeleted: (playlistId: string) => void;
+}) {
+  const [name, setName] = useState("");
+  const [category, setCategory] = useState<Playlist["category"]>("CATOLICA");
+  const [saving, setSaving] = useState(false);
+  const [trackSaving, setTrackSaving] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+
+  useEffect(() => {
+    if (!open) return;
+    setName(playlist?.name ?? "");
+    setCategory(playlist?.category ?? "CATOLICA");
+    setSaving(false);
+    setTrackSaving(false);
+    setUploadProgress(0);
+  }, [open, playlist]);
+
+  const isNativePlaylist =
+    playlist?.id === "playlist-catolica" || playlist?.id === "playlist-evangelica";
+  const normalizedTracks = (playlist?.tracks ?? []).slice().sort((a, b) => a.order - b.order);
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      if (playlist) {
+        await updatePlaylist(playlist.id, { name, category });
+        toast.success("Playlist atualizada.");
+        onSaved(playlist.id, false);
+      } else {
+        const playlistId = await createPlaylist(name, category);
+        toast.success("Playlist criada.");
+        onSaved(playlistId, true);
+      }
+      onOpenChange(false);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha ao salvar playlist.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (!playlist) return;
+    if (isNativePlaylist) {
+      toast.error("As playlists nativas nao podem ser excluidas.");
+      return;
+    }
+    if (!window.confirm(`Excluir a playlist ${playlist.name}?`)) return;
+    setSaving(true);
+    try {
+      await deletePlaylist(playlist);
+      toast.success("Playlist excluida.");
+      onDeleted(playlist.id);
+      onOpenChange(false);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha ao excluir playlist.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleAddTracks(files: FileList | null) {
+    if (!playlist || !files || files.length === 0) return;
+    setTrackSaving(true);
+    try {
+      for (const file of Array.from(files)) {
+        await addPlaylistTrack(playlist.id, file, setUploadProgress);
+      }
+      toast.success("Faixa(s) enviada(s).");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha ao enviar faixa.");
+    } finally {
+      setTrackSaving(false);
+      setUploadProgress(0);
+    }
+  }
+
+  async function handleRemoveTrack(trackId: string) {
+    if (!playlist) return;
+    setTrackSaving(true);
+    try {
+      await removePlaylistTrack(playlist.id, trackId);
+      toast.success("Faixa removida.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha ao remover faixa.");
+    } finally {
+      setTrackSaving(false);
+    }
+  }
+
+  async function handleMoveTrack(trackId: string, direction: "up" | "down") {
+    if (!playlist) return;
+    setTrackSaving(true);
+    try {
+      await movePlaylistTrack(playlist.id, trackId, direction);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha ao reordenar faixa.");
+    } finally {
+      setTrackSaving(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[90vh] overflow-y-auto border-border bg-surface sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>{playlist ? "Editar playlist" : "Nova playlist"}</DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-5">
+          <div className="grid gap-4 md:grid-cols-2">
+            <Field label="Nome">
+              <Input value={name} onChange={(event) => setName(event.target.value)} />
+            </Field>
+            <Field label="Categoria">
+              <Select
+                value={category}
+                onValueChange={(value) => setCategory(value as Playlist["category"])}
+                disabled={isNativePlaylist}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="CATOLICA">Catolica</SelectItem>
+                  <SelectItem value="EVANGELICA">Evangelica</SelectItem>
+                </SelectContent>
+              </Select>
+            </Field>
+          </div>
+
+          {playlist ? (
+            <section className="space-y-3 rounded-md border border-border bg-background/45 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-semibold">Faixas da playlist</h3>
+                  <p className="text-xs text-muted-foreground">
+                    Adicione MP3, remova ou reorganize a ordem de execucao.
+                  </p>
+                </div>
+                <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-border bg-surface px-3 py-2 text-sm">
+                  <input
+                    type="file"
+                    accept="audio/mpeg,audio/mp3,.mp3"
+                    multiple
+                    className="hidden"
+                    onChange={(event) => {
+                      const files = event.target.files;
+                      event.target.value = "";
+                      void handleAddTracks(files);
+                    }}
+                  />
+                  <FileAudio className="h-4 w-4" />
+                  Adicionar MP3
+                </label>
+              </div>
+
+              {trackSaving && (
+                <div className="space-y-2 rounded-md border border-border bg-background/45 px-3 py-2 text-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Enviando arquivo</span>
+                    <span className="tabular-nums">{uploadProgress}%</span>
+                  </div>
+                  <div className="h-2 overflow-hidden rounded-sm bg-muted">
+                    <div
+                      className="h-full bg-primary transition-all"
+                      style={{ width: `${uploadProgress}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {normalizedTracks.length === 0 ? (
+                <div className="rounded-md border border-dashed border-border bg-background/60 px-4 py-5 text-sm text-muted-foreground">
+                  Nenhuma faixa adicionada ainda.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {normalizedTracks.map((track, index) => (
+                    <div
+                      key={track.id}
+                      className="grid gap-3 rounded-md border border-border bg-surface px-3 py-3 md:grid-cols-[1fr_auto]"
+                    >
+                      <div className="min-w-0 space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium">{track.name}</span>
+                          <Badge variant="outline" className="h-5 rounded-sm px-1.5 text-[10px]">
+                            {String(index + 1).padStart(2, "0")}
+                          </Badge>
+                        </div>
+                        <audio className="w-full" controls preload="none" src={track.url} />
+                      </div>
+                      <div className="flex items-start gap-2 md:justify-end">
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          className="h-8 w-8"
+                          disabled={trackSaving || index === 0}
+                          onClick={() => handleMoveTrack(track.id, "up")}
+                        >
+                          <ArrowUp className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          className="h-8 w-8"
+                          disabled={trackSaving || index === normalizedTracks.length - 1}
+                          onClick={() => handleMoveTrack(track.id, "down")}
+                        >
+                          <ArrowDown className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 border-destructive/40 text-destructive hover:bg-destructive/10"
+                          disabled={trackSaving}
+                          onClick={() => handleRemoveTrack(track.id)}
+                        >
+                          <Trash2 className="mr-2 h-3.5 w-3.5" />
+                          Remover
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          ) : (
+            <section className="rounded-md border border-dashed border-border bg-background/45 px-4 py-5 text-sm text-muted-foreground">
+              Salve a playlist primeiro para adicionar faixas.
+            </section>
+          )}
+
+          <div className="flex flex-wrap gap-2">
+            <Button disabled={saving} onClick={handleSave}>
+              <Save className="mr-2 h-4 w-4" />
+              {playlist ? "Salvar alteracoes" : "Criar playlist"}
+            </Button>
+            {playlist && !isNativePlaylist && (
+              <Button variant="destructive" disabled={saving} onClick={() => void handleDelete()}>
+                <Trash2 className="mr-2 h-4 w-4" />
+                Excluir playlist
+              </Button>
+            )}
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function groupPlaylistsByCategory(playlists: Playlist[]) {
+  return {
+    CATOLICA: playlists.filter((playlist) => playlist.category === "CATOLICA"),
+    EVANGELICA: playlists.filter((playlist) => playlist.category === "EVANGELICA"),
+  } satisfies Record<Playlist["category"], Playlist[]>;
+}
+
+function playlistCategoryLabel(category: Playlist["category"]) {
+  return category === "CATOLICA" ? "Catolica" : "Evangelica";
 }
 
 function SettingsDialog({

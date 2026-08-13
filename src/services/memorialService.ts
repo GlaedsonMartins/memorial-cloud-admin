@@ -2,6 +2,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   getDocs,
   onSnapshot,
   orderBy,
@@ -96,6 +97,13 @@ export function subscribePlaylists(
   return subscribeCollection<Playlist>("playlists", callback, onError, "name");
 }
 
+function normalizePlaylistTracks(tracks: Playlist["tracks"]) {
+  return tracks
+    .slice()
+    .sort((a, b) => a.order - b.order)
+    .map((track, index) => ({ ...track, order: index + 1 }));
+}
+
 export function subscribePlayerStatus(
   callback: (items: PlayerStatus[]) => void,
   onError: (error: FirestoreError) => void,
@@ -181,6 +189,140 @@ export async function ensureBootstrapData() {
   );
 
   await batch.commit();
+}
+
+export async function createPlaylist(name: string, category: Playlist["category"]) {
+  const trimmedName = name.trim();
+  if (!trimmedName) {
+    throw new Error("O nome da playlist e obrigatorio.");
+  }
+  if (trimmedName.length > 60) {
+    throw new Error("O nome da playlist deve ter no maximo 60 caracteres.");
+  }
+
+  const db = getFirebaseDb();
+  const playlistRef = doc(collection(db, "playlists"));
+  await setDoc(playlistRef, {
+    name: trimmedName,
+    category,
+    tracks: [],
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+    schemaVersion: SCHEMA_VERSION,
+  });
+  return playlistRef.id;
+}
+
+export async function updatePlaylist(
+  playlistId: string,
+  updates: Pick<Playlist, "name" | "category">,
+) {
+  const trimmedName = updates.name.trim();
+  if (!trimmedName) {
+    throw new Error("O nome da playlist e obrigatorio.");
+  }
+  if (trimmedName.length > 60) {
+    throw new Error("O nome da playlist deve ter no maximo 60 caracteres.");
+  }
+
+  await updateDoc(doc(getFirebaseDb(), "playlists", playlistId), {
+    name: trimmedName,
+    category: updates.category,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function deletePlaylist(playlist: Playlist) {
+  await Promise.all(playlist.tracks.map((track) => deleteStoredFile(track.storagePath)));
+  await deleteDoc(doc(getFirebaseDb(), "playlists", playlist.id));
+}
+
+function isAudioFile(file: File) {
+  const type = file.type.toLowerCase();
+  return (
+    type.includes("audio") ||
+    type === "application/octet-stream" ||
+    file.name.toLowerCase().endsWith(".mp3")
+  );
+}
+
+export async function addPlaylistTrack(
+  playlistId: string,
+  file: File,
+  onProgress?: UploadProgressHandler,
+) {
+  if (!isAudioFile(file)) {
+    throw new Error("Envie apenas arquivos MP3.");
+  }
+
+  const db = getFirebaseDb();
+  const playlistSnapshot = await getDoc(doc(db, "playlists", playlistId));
+  if (!playlistSnapshot.exists()) {
+    throw new Error("Playlist nao encontrada.");
+  }
+  const playlist = { id: playlistSnapshot.id, ...playlistSnapshot.data() } as Playlist;
+  const upload = await uploadFile(file, `playlists/${playlist.id}/tracks`, onProgress);
+  const nextTracks = normalizePlaylistTracks([
+    ...playlist.tracks,
+    {
+      id: crypto.randomUUID(),
+      name: upload.name,
+      url: upload.url,
+      storagePath: upload.storagePath,
+      duration: null,
+      order: playlist.tracks.length + 1,
+      createdAt: serverTimestamp(),
+    },
+  ]);
+
+  await updateDoc(doc(db, "playlists", playlist.id), {
+    tracks: nextTracks,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function removePlaylistTrack(playlistId: string, trackId: string) {
+  const db = getFirebaseDb();
+  const playlistSnapshot = await getDoc(doc(db, "playlists", playlistId));
+  if (!playlistSnapshot.exists()) {
+    throw new Error("Playlist nao encontrada.");
+  }
+  const playlist = { id: playlistSnapshot.id, ...playlistSnapshot.data() } as Playlist;
+  const track = playlist.tracks.find((item) => item.id === trackId);
+  if (!track) return;
+
+  const nextTracks = normalizePlaylistTracks(playlist.tracks.filter((item) => item.id !== trackId));
+  await updateDoc(doc(db, "playlists", playlist.id), {
+    tracks: nextTracks,
+    updatedAt: serverTimestamp(),
+  });
+  await deleteStoredFile(track.storagePath);
+}
+
+export async function movePlaylistTrack(
+  playlistId: string,
+  trackId: string,
+  direction: "up" | "down",
+) {
+  const db = getFirebaseDb();
+  const playlistSnapshot = await getDoc(doc(db, "playlists", playlistId));
+  if (!playlistSnapshot.exists()) {
+    throw new Error("Playlist nao encontrada.");
+  }
+  const playlist = { id: playlistSnapshot.id, ...playlistSnapshot.data() } as Playlist;
+  const tracks = normalizePlaylistTracks(playlist.tracks);
+  const index = tracks.findIndex((item) => item.id === trackId);
+  if (index < 0) return;
+  const swapIndex = direction === "up" ? index - 1 : index + 1;
+  if (swapIndex < 0 || swapIndex >= tracks.length) return;
+
+  const nextTracks = tracks.slice();
+  [nextTracks[index], nextTracks[swapIndex]] = [nextTracks[swapIndex], nextTracks[index]];
+  const normalized = normalizePlaylistTracks(nextTracks);
+  await updateDoc(doc(db, "playlists", playlist.id), {
+    tracks: normalized,
+    updatedAt: serverTimestamp(),
+  });
 }
 
 export async function createTribute(
