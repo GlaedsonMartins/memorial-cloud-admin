@@ -320,6 +320,7 @@ type VideoDraftItem = {
 function RoomCard({ view, onManage }: { view: RoomViewModel; onManage: () => void }) {
   const mediaCount = (view.tribute?.photos.length ?? 0) + (view.tribute?.videos.length ?? 0);
   const currentPhoto = view.tribute?.photos[0];
+  const displayName = view.device?.deviceName?.trim() || view.room.name;
 
   return (
     <section className="flex min-h-[320px] flex-col overflow-hidden rounded-lg border border-border bg-surface">
@@ -329,9 +330,9 @@ function RoomCard({ view, onManage }: { view: RoomViewModel; onManage: () => voi
             {String(view.room.number).padStart(2, "0")}
           </div>
           <div>
-            <h3 className="text-sm font-semibold tracking-tight">{view.room.name}</h3>
+            <h3 className="text-sm font-semibold tracking-tight text-primary">{displayName}</h3>
             <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
-              {view.room.playerId}
+              Sala {String(view.room.number).padStart(2, "0")} · {view.room.playerId}
             </p>
           </div>
         </div>
