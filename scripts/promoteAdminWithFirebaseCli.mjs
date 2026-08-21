@@ -22,6 +22,8 @@ const databaseId = process.env.FIREBASE_DATABASE_ID || "memorialcloud";
 const adminEmail = process.env.ADMIN_EMAIL;
 const adminPassword = process.env.ADMIN_PASSWORD;
 const adminName = process.env.ADMIN_NAME || "Glaedson Administrador";
+const requestedUid = process.env.ADMIN_UID;
+const previousUid = process.env.PREVIOUS_ADMIN_UID;
 
 function requireEnv(name, value) {
   if (!value) {
@@ -122,7 +124,38 @@ async function lookupUserByEmail() {
   }
 }
 
+async function lookupUserByUid(uid) {
+  const data = await googleJson(
+    `https://identitytoolkit.googleapis.com/v1/projects/${projectId}/accounts:lookup`,
+    { localId: [uid] },
+  );
+  return data.users?.[0] ?? null;
+}
+
 async function ensureAuthUser() {
+  if (requestedUid) {
+    const existingByUid = await lookupUserByUid(requestedUid);
+    if (!existingByUid) {
+      throw new Error(`Firebase Authentication user not found for UID ${requestedUid}.`);
+    }
+    if (existingByUid.email?.toLowerCase() !== adminEmail.toLowerCase()) {
+      throw new Error(
+        `UID ${requestedUid} belongs to ${existingByUid.email || "another account"}, not ${adminEmail}.`,
+      );
+    }
+    await googleJson(
+      `https://identitytoolkit.googleapis.com/v1/projects/${projectId}/accounts:update`,
+      {
+        localId: requestedUid,
+        displayName: adminName,
+        emailVerified: true,
+        disabled: false,
+        customAttributes: JSON.stringify({ admin: true }),
+      },
+    );
+    return requestedUid;
+  }
+
   const existing = await lookupUserByEmail();
 
   if (existing?.localId) {
@@ -196,7 +229,28 @@ async function writeAdminProfile(uid) {
   );
 }
 
+async function deleteAdminProfile(uid) {
+  await googleJson(
+    `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${databaseId}/documents/users/${uid}`,
+    undefined,
+    { method: "DELETE" },
+  );
+}
+
+async function revokePreviousAdminClaims(uid) {
+  const existing = await lookupUserByUid(uid);
+  if (!existing) return;
+  await googleJson(
+    `https://identitytoolkit.googleapis.com/v1/projects/${projectId}/accounts:update`,
+    { localId: uid, customAttributes: JSON.stringify({}) },
+  );
+}
+
 const uid = await ensureAuthUser();
 await writeAdminProfile(uid);
+if (previousUid && previousUid !== uid) {
+  await revokePreviousAdminClaims(previousUid);
+  await deleteAdminProfile(previousUid);
+}
 
 console.log(`Admin access granted to ${adminEmail} (${uid}).`);
