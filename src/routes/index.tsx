@@ -1896,6 +1896,14 @@ function SettingsDialog({
                   key={view.room.id}
                   className="space-y-3 rounded-lg border border-border bg-surface/80 p-4 shadow-sm"
                 >
+                  <div>
+                    <div className="text-sm font-semibold tracking-tight text-primary">
+                      {view.device?.deviceName?.trim() || view.room.name}
+                    </div>
+                    <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                      Sala {String(view.room.number).padStart(2, "0")} - {view.room.playerId}
+                    </div>
+                  </div>
                   <Field
                     label={`Sala ${String(view.room.number).padStart(2, "0")} · ${view.room.playerId}`}
                   >
