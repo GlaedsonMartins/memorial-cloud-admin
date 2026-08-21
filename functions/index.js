@@ -29,7 +29,27 @@ async function assertAdmin(context) {
   if (!uid) {
     throw new HttpsError("unauthenticated", "Login administrativo obrigatorio.");
   }
-  if (context.auth.token.admin === true) return uid;
+
+  let authUser;
+  try {
+    authUser = await auth.getUser(uid);
+  } catch (error) {
+    if (error?.code === "auth/user-not-found") {
+      throw new HttpsError("unauthenticated", "Conta administrativa removida.");
+    }
+    throw error;
+  }
+  if (authUser.disabled) {
+    throw new HttpsError("permission-denied", "Conta administrativa desativada.");
+  }
+
+  const authTime = Number(context.auth.token.auth_time ?? 0);
+  const tokensValidAfter = authUser.tokensValidAfterTime
+    ? Math.floor(new Date(authUser.tokensValidAfterTime).getTime() / 1000)
+    : 0;
+  if (authTime > 0 && tokensValidAfter > 0 && authTime < tokensValidAfter) {
+    throw new HttpsError("unauthenticated", "Sessao administrativa revogada.");
+  }
 
   const userSnapshot = await db.collection("users").doc(uid).get();
   const user = userSnapshot.data();
@@ -231,6 +251,11 @@ export const refreshDeviceSession = onCall(async (request) => {
     setupCompleted: true,
     customToken: await createDeviceSessionToken(deviceId, device.roomId),
   };
+});
+
+export const validateAdminSession = onCall(async (request) => {
+  await assertAdmin(request);
+  return { valid: true };
 });
 
 export const deleteRoomDevices = onCall(async (request) => {
