@@ -1,0 +1,17 @@
+[
+  {
+    "origin": [
+      "https://memorial-cloud-admin.vercel.app",
+      "https://memorial-player.vercel.app"
+    ],
+    "method": ["GET", "HEAD", "OPTIONS"],
+    "responseHeader": [
+      "Content-Type",
+      "Content-Length",
+      "Accept-Ranges",
+      "Content-Range",
+      "ETag"
+    ],
+    "maxAgeSeconds": 3600
+  }
+]
