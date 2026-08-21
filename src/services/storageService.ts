@@ -1,4 +1,4 @@
-import { deleteObject, getDownloadURL, ref, uploadBytesResumable } from "firebase/storage";
+import { deleteObject, getDownloadURL, listAll, ref, uploadBytesResumable } from "firebase/storage";
 import { getFirebaseStorage } from "@/firebase/client";
 
 export type UploadProgressHandler = (progress: number) => void;
@@ -40,4 +40,9 @@ export async function uploadFile(file: File, folder: string, onProgress?: Upload
 export async function deleteStoredFile(storagePath: string | null | undefined) {
   if (!storagePath) return;
   await deleteObject(ref(getFirebaseStorage(), storagePath));
+}
+
+export async function deleteStoredFolder(storagePath: string) {
+  const folder = await listAll(ref(getFirebaseStorage(), storagePath));
+  await Promise.all(folder.items.map((item) => deleteObject(item)));
 }

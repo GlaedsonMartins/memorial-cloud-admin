@@ -22,6 +22,7 @@ import { getFirebaseDb } from "@/firebase/client";
 import { getFirebaseFunctions } from "@/firebase/client";
 import { httpsCallable } from "firebase/functions";
 import {
+  deleteStoredFolder,
   deleteStoredFile,
   uploadFile,
   type UploadProgressHandler,
@@ -578,11 +579,28 @@ export async function endTribute(room: Room, tribute: Tribute) {
 
 export async function deleteTribute(tribute: Tribute) {
   await Promise.all([
-    ...tribute.photos.map((item) => deleteStoredFile(item.storagePath)),
-    ...tribute.videos.map((item) => deleteStoredFile(item.storagePath)),
+    deleteStoredFolder(`tributes/${tribute.id}/photos`),
+    deleteStoredFolder(`tributes/${tribute.id}/videos`),
   ]);
   const db = getFirebaseDb();
-  await deleteDoc(doc(db, "tributes", tribute.id));
+  const [sessionSnapshot, roomSnapshot] = await Promise.all([
+    getDocs(query(collection(db, "active_sessions"), where("tributeId", "==", tribute.id))),
+    getDoc(doc(db, "rooms", tribute.roomId)),
+  ]);
+  const batch = writeBatch(db);
+
+  batch.delete(doc(db, "tributes", tribute.id));
+  sessionSnapshot.docs.forEach((snapshot) => batch.delete(snapshot.ref));
+
+  if (roomSnapshot.exists() && roomSnapshot.data()?.activeTributeId === tribute.id) {
+    batch.update(roomSnapshot.ref, {
+      status: "FREE",
+      activeTributeId: null,
+      updatedAt: serverTimestamp(),
+    });
+  }
+
+  await batch.commit();
 }
 
 export async function saveSettings(
@@ -728,8 +746,8 @@ export async function deactivateRoom(room: Room) {
     tributeSnapshot.docs.map(async (snapshot) => {
       const tribute = { id: snapshot.id, ...snapshot.data() } as Tribute;
       await Promise.all([
-        ...tribute.photos.map((item) => deleteStoredFile(item.storagePath)),
-        ...tribute.videos.map((item) => deleteStoredFile(item.storagePath)),
+        deleteStoredFolder(`tributes/${tribute.id}/photos`),
+        deleteStoredFolder(`tributes/${tribute.id}/videos`),
       ]);
       await deleteDoc(snapshot.ref);
     }),

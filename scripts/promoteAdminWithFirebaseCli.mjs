@@ -135,7 +135,10 @@ async function ensureAuthUser() {
       customAttributes: JSON.stringify({ admin: true }),
     };
     if (adminPassword) update.password = adminPassword;
-    await googleJson(`https://identitytoolkit.googleapis.com/v1/projects/${projectId}/accounts:update`, update);
+    await googleJson(
+      `https://identitytoolkit.googleapis.com/v1/projects/${projectId}/accounts:update`,
+      update,
+    );
 
     return existing.localId;
   }
