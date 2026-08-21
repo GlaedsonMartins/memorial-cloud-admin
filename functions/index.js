@@ -38,6 +38,15 @@ async function assertAdmin(context) {
   throw new HttpsError("permission-denied", "Apenas administradores podem criar salas.");
 }
 
+async function deleteDeviceAuthUser(deviceId) {
+  if (!deviceId || !deviceId.startsWith("device-")) return;
+  try {
+    await auth.deleteUser(deviceId);
+  } catch (error) {
+    if (error?.code !== "auth/user-not-found") throw error;
+  }
+}
+
 function buildDeviceToken() {
   return randomBytes(32).toString("base64url");
 }
@@ -221,5 +230,31 @@ export const refreshDeviceSession = onCall(async (request) => {
     deviceName: device.deviceName,
     setupCompleted: true,
     customToken: await createDeviceSessionToken(deviceId, device.roomId),
+  };
+});
+
+export const deleteRoomDevices = onCall(async (request) => {
+  await assertAdmin(request);
+  const roomId = typeof request.data?.roomId === "string" ? request.data.roomId.trim() : "";
+
+  if (!roomId) {
+    throw new HttpsError("invalid-argument", "Sala invalida.");
+  }
+
+  const [deviceSnapshot, playerStatusSnapshot] = await Promise.all([
+    db.collection("devices").where("roomId", "==", roomId).get(),
+    db.collection("player_status").where("roomId", "==", roomId).get(),
+  ]);
+
+  await Promise.all(deviceSnapshot.docs.map((device) => deleteDeviceAuthUser(device.id)));
+
+  const batch = db.batch();
+  deviceSnapshot.docs.forEach((device) => batch.delete(device.ref));
+  playerStatusSnapshot.docs.forEach((status) => batch.delete(status.ref));
+  if (deviceSnapshot.size || playerStatusSnapshot.size) await batch.commit();
+
+  return {
+    deletedDevices: deviceSnapshot.size,
+    deletedPlayerStatuses: playerStatusSnapshot.size,
   };
 });

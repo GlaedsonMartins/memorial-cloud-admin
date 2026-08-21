@@ -19,6 +19,8 @@ import {
   type Unsubscribe,
 } from "firebase/firestore";
 import { getFirebaseDb } from "@/firebase/client";
+import { getFirebaseFunctions } from "@/firebase/client";
+import { httpsCallable } from "firebase/functions";
 import {
   deleteStoredFile,
   uploadFile,
@@ -733,6 +735,7 @@ export async function deactivateRoom(room: Room) {
     }),
   );
 
+  await deleteRoomDevice(room.id);
   await Promise.all(deviceSnapshot.docs.map((snapshot) => deleteDoc(snapshot.ref)));
   await Promise.all(playerStatusSnapshot.docs.map((snapshot) => deleteDoc(snapshot.ref)));
 
@@ -743,14 +746,11 @@ export async function deactivateRoom(room: Room) {
 }
 
 export async function deleteRoomDevice(roomId: string) {
-  const db = getFirebaseDb();
-  const [deviceSnapshot, playerStatusSnapshot] = await Promise.all([
-    getDocs(query(collection(db, "devices"), where("roomId", "==", roomId))),
-    getDocs(query(collection(db, "player_status"), where("roomId", "==", roomId))),
-  ]);
-
-  await Promise.all(deviceSnapshot.docs.map((snapshot) => deleteDoc(snapshot.ref)));
-  await Promise.all(playerStatusSnapshot.docs.map((snapshot) => deleteDoc(snapshot.ref)));
+  const deleteDevices = httpsCallable<{ roomId: string }, { deletedDevices: number }>(
+    getFirebaseFunctions(),
+    "deleteRoomDevices",
+  );
+  await deleteDevices({ roomId });
 }
 
 export async function updateRoomSyncing(roomId: string) {

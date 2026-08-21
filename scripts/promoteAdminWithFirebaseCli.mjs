@@ -21,6 +21,7 @@ const projectId = process.env.FIREBASE_PROJECT_ID || "memorial-cloud-5da8e";
 const databaseId = process.env.FIREBASE_DATABASE_ID || "memorialcloud";
 const adminEmail = process.env.ADMIN_EMAIL;
 const adminPassword = process.env.ADMIN_PASSWORD;
+const adminName = process.env.ADMIN_NAME || "Glaedson Administrador";
 
 function requireEnv(name, value) {
   if (!value) {
@@ -30,9 +31,7 @@ function requireEnv(name, value) {
 }
 
 requireEnv("ADMIN_EMAIL", adminEmail);
-requireEnv("ADMIN_PASSWORD", adminPassword);
-
-if (adminPassword.length < 6) {
+if (adminPassword && adminPassword.length < 6) {
   console.error("ADMIN_PASSWORD must have at least 6 characters.");
   process.exit(1);
 }
@@ -127,26 +126,26 @@ async function ensureAuthUser() {
   const existing = await lookupUserByEmail();
 
   if (existing?.localId) {
-    await googleJson(
-      `https://identitytoolkit.googleapis.com/v1/projects/${projectId}/accounts:update`,
-      {
-        localId: existing.localId,
-        email: adminEmail,
-        password: adminPassword,
-        displayName: "Glaedson Administrador",
-        emailVerified: true,
-        disabled: false,
-        customAttributes: JSON.stringify({ admin: true }),
-      },
-    );
+    const update = {
+      localId: existing.localId,
+      email: adminEmail,
+      displayName: adminName,
+      emailVerified: true,
+      disabled: false,
+      customAttributes: JSON.stringify({ admin: true }),
+    };
+    if (adminPassword) update.password = adminPassword;
+    await googleJson(`https://identitytoolkit.googleapis.com/v1/projects/${projectId}/accounts:update`, update);
 
     return existing.localId;
   }
 
+  requireEnv("ADMIN_PASSWORD when the account does not exist", adminPassword);
+
   const created = await publicIdentityJson("accounts:signUp", {
     email: adminEmail,
     password: adminPassword,
-    displayName: "Glaedson Administrador",
+    displayName: adminName,
     returnSecureToken: false,
   });
 
@@ -155,7 +154,7 @@ async function ensureAuthUser() {
     {
       localId: created.localId,
       email: adminEmail,
-      displayName: "Glaedson Administrador",
+      displayName: adminName,
       emailVerified: true,
       disabled: false,
       customAttributes: JSON.stringify({ admin: true }),
@@ -175,7 +174,7 @@ function firestoreValue(value) {
 async function writeAdminProfile(uid) {
   const now = new Date().toISOString();
   const fields = {
-    name: firestoreValue("Glaedson Administrador"),
+    name: firestoreValue(adminName),
     email: firestoreValue(adminEmail),
     role: firestoreValue("ADMIN"),
     active: firestoreValue(true),
