@@ -43,6 +43,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
+import { Slider } from "@/components/ui/slider";
 import {
   Sheet,
   SheetContent,
@@ -72,6 +73,7 @@ import {
   removePlaylistTrack,
   saveSettings,
   startTribute,
+  updateTributeAudioSettings,
   updateTribute,
   updatePlaylist,
   updateRoomName,
@@ -79,9 +81,12 @@ import {
 } from "@/services/memorialService";
 import {
   ALLOWED_SLIDE_DURATIONS,
+  DEFAULT_AUDIO_SETTINGS,
+  normalizeAudioSettings,
   MAX_PHOTOS_PER_TRIBUTE,
   MAX_VIDEO_SECONDS,
   type MediaItem,
+  type AudioSettings,
   type Playlist,
   type Room,
   type RoomViewModel,
@@ -487,6 +492,8 @@ function RoomManagerSheet({
   const [playlistEditorOpen, setPlaylistEditorOpen] = useState(false);
   const [editingPlaylistId, setEditingPlaylistId] = useState<string | null>(null);
   const [slideDuration, setSlideDuration] = useState<SlideDuration>(5);
+  const [audioSettings, setAudioSettings] = useState<AudioSettings>(DEFAULT_AUDIO_SETTINGS);
+  const [audioSaving, setAudioSaving] = useState(false);
   const [saving, setSaving] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const activeTribute = roomView?.tribute ?? null;
@@ -499,6 +506,7 @@ function RoomManagerSheet({
     setNotes(activeTribute?.notes ?? "");
     setPlaylistId(activeTribute?.playlistId ?? playlists[0]?.id ?? "");
     setSlideDuration(activeTribute?.slideDuration ?? 5);
+    setAudioSettings(normalizeAudioSettings(activeTribute?.audioSettings));
     setExistingPhotos(sortMedia(activeTribute?.photos ?? []));
     setExistingVideos(sortMedia(activeTribute?.videos ?? []).map(normalizeVideoItem));
     setPhotos([]);
@@ -609,6 +617,7 @@ function RoomManagerSheet({
         videos,
         playlistId,
         slideDuration,
+        audioSettings,
       };
 
       if (activeTribute) {
@@ -626,6 +635,19 @@ function RoomManagerSheet({
       toast.error(error instanceof Error ? error.message : "Falha ao salvar homenagem.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleAudioSettingsSave() {
+    if (!activeTribute) return;
+    setAudioSaving(true);
+    try {
+      await updateTributeAudioSettings(activeTribute.id, audioSettings);
+      toast.success("Volume da homenagem atualizado na TV.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha ao atualizar o volume.");
+    } finally {
+      setAudioSaving(false);
     }
   }
 
@@ -777,6 +799,12 @@ function RoomManagerSheet({
                   placeholder="Informacoes internas opcionais"
                 />
               </Field>
+              <AudioSettingsSection
+                settings={audioSettings}
+                disabled={saving || audioSaving}
+                onChange={setAudioSettings}
+                onSave={activeTribute ? handleAudioSettingsSave : undefined}
+              />
             </TabsContent>
 
             <TabsContent value="media" className="mt-5 space-y-4">
@@ -929,6 +957,101 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       {children}
     </div>
   );
+}
+
+function AudioSettingsSection({
+  settings,
+  disabled,
+  onChange,
+  onSave,
+}: {
+  settings: AudioSettings;
+  disabled: boolean;
+  onChange: (settings: AudioSettings) => void;
+  onSave?: () => void;
+}) {
+  const controls = [
+    {
+      key: "masterVolume" as const,
+      label: "Volume geral",
+      description: "Controla toda a homenagem.",
+      value: Math.round(settings.masterVolume * 100),
+      max: 100,
+      step: 1,
+      suffix: "%",
+    },
+    {
+      key: "musicVolume" as const,
+      label: "Volume da musica",
+      description: "Pode amplificar a playlist ate 200%.",
+      value: Math.round(settings.musicVolume * 200),
+      max: 200,
+      step: 1,
+      suffix: "%",
+    },
+    {
+      key: "videoVolume" as const,
+      label: "Volume dos videos",
+      description: "Controla o audio original dos videos.",
+      value: Math.round(settings.videoVolume * 100),
+      max: 100,
+      step: 1,
+      suffix: "%",
+    },
+  ];
+
+  return (
+    <section className="rounded-md border border-border bg-background/45 p-4">
+      <div className="mb-4 flex items-start gap-3">
+        <Volume2 className="mt-0.5 h-4 w-4 text-primary" />
+        <div>
+          <h3 className="text-sm font-semibold">Volume da homenagem</h3>
+          <p className="text-xs text-muted-foreground">
+            Ajuste a musica e os videos sem alterar os arquivos.
+          </p>
+        </div>
+      </div>
+      <div className="space-y-5">
+        {controls.map((control) => (
+          <div key={control.key} className="space-y-2">
+            <div className="flex items-center justify-between gap-3 text-xs">
+              <div>
+                <div className="font-medium">{control.label}</div>
+                <div className="text-muted-foreground">{control.description}</div>
+              </div>
+              <span className="tabular-nums text-primary">
+                {control.value}
+                {control.suffix}
+              </span>
+            </div>
+            <Slider
+              min={0}
+              max={control.max}
+              step={control.step}
+              value={[control.value]}
+              disabled={disabled}
+              onValueChange={([value]) => {
+                onChange({
+                  ...settings,
+                  [control.key]: value / control.max,
+                });
+              }}
+              aria-label={control.label}
+            />
+          </div>
+        ))}
+      </div>
+      {onSave && (
+        <Button className="mt-5 h-9 w-full" disabled={disabled} onClick={onSave}>
+          {audioSavingLabel(disabled)}
+        </Button>
+      )}
+    </section>
+  );
+}
+
+function audioSavingLabel(disabled: boolean) {
+  return disabled ? "Atualizando volume..." : "Aplicar volume na TV";
 }
 
 function UploadBox({

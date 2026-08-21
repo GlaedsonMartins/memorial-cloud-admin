@@ -27,7 +27,10 @@ import {
 import {
   ROOM_COUNT,
   SCHEMA_VERSION,
+  DEFAULT_AUDIO_SETTINGS,
+  normalizeAudioSettings,
   type ActiveSession,
+  type AudioSettings,
   type CreateRoomResult,
   type MediaItem,
   type Playlist,
@@ -385,6 +388,7 @@ export async function createTribute(
     playlistId: draft.playlistId,
     slideDuration: draft.slideDuration,
     notes: draft.notes,
+    audioSettings: normalizeAudioSettings(draft.audioSettings ?? DEFAULT_AUDIO_SETTINGS),
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
     startedAt: null,
@@ -461,6 +465,9 @@ export async function updateTribute(
     playlistId: draft.playlistId,
     slideDuration: draft.slideDuration,
     notes: draft.notes,
+    audioSettings: normalizeAudioSettings(
+      draft.audioSettings ?? tribute.audioSettings ?? DEFAULT_AUDIO_SETTINGS,
+    ),
     updatedAt: serverTimestamp(),
   });
 
@@ -489,6 +496,13 @@ export async function updateTribute(
     ),
   ]);
   onProgress?.(100);
+}
+
+export async function updateTributeAudioSettings(tributeId: string, audioSettings: AudioSettings) {
+  await updateDoc(doc(getFirebaseDb(), "tributes", tributeId), {
+    audioSettings: normalizeAudioSettings(audioSettings),
+    updatedAt: serverTimestamp(),
+  });
 }
 
 function findRemovedMedia(previous: MediaItem[], retained: MediaItem[]) {
