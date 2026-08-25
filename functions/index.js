@@ -53,7 +53,13 @@ async function assertAdmin(context) {
 
   const userSnapshot = await db.collection("users").doc(uid).get();
   const user = userSnapshot.data();
-  if (user?.active === true && user?.role === "ADMIN") return uid;
+  if (user?.active === true && user?.role === "ADMIN") {
+    const customClaims = authUser.customClaims ?? {};
+    if (customClaims.admin !== true) {
+      await auth.setCustomUserClaims(uid, { ...customClaims, admin: true });
+    }
+    return uid;
+  }
 
   throw new HttpsError("permission-denied", "Apenas administradores podem criar salas.");
 }

@@ -7,9 +7,7 @@ service firebase.storage {
     }
 
     function isAdmin() {
-      return signedIn() &&
-        firestore.get(/databases/memorialcloud/documents/users/$(request.auth.uid)).data.active == true &&
-        firestore.get(/databases/memorialcloud/documents/users/$(request.auth.uid)).data.role == "ADMIN";
+      return signedIn() && request.auth.token.admin == true;
     }
 
     function isPlayer() {

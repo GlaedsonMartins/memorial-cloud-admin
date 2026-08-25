@@ -102,15 +102,9 @@ Preencha a tela com dados fictícios para teste:
 
 - Sala 3: Pausada.
 
-This project was built with [Lovable](https://lovable.dev).
+## Memorial Cloud
 
-## Build with Lovable
-
-Continue developing this project in the [Lovable editor](https://lovable.dev/projects/8246b6e4-5e98-42db-9ed0-aa74075d2922).
-
-- **Ship faster**: describe what you want to build and Lovable handles the code.
-- **Stay in sync**: every change made in Lovable is committed straight to this repository.
-- **Full ownership**: this code is yours. Push to `main` on GitHub and your changes sync back into Lovable, ready for your next prompt.
+Painel de gerenciamento de homenagens funerárias, mídias e salas de transmissão.
 
 ## Development
 

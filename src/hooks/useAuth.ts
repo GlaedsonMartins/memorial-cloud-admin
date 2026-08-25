@@ -40,6 +40,7 @@ export function useAuth() {
         validationInFlight.current = true;
         try {
           await validateAdminSession();
+          await nextUser.getIdToken(true);
         } catch (validationError) {
           if (isConfirmedAuthorizationFailure(validationError)) {
             await signOutAdmin().catch(() => undefined);

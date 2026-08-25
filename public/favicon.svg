@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Memorial Cloud">
+  <defs>
+    <linearGradient id="cloud" x1="12" y1="12" x2="52" y2="54" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#60a5fa"/>
+      <stop offset="1" stop-color="#2563eb"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="16" fill="#0f172a"/>
+  <path d="M18 45h28a9 9 0 0 0 1-18 14 14 0 0 0-26-3 10 10 0 0 0-3 21Z" fill="url(#cloud)"/>
+  <path d="M32 27v17M25 34h14" stroke="#fff" stroke-width="4" stroke-linecap="round"/>
+</svg>
