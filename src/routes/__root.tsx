@@ -11,6 +11,7 @@ import { type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 import { Toaster } from "../components/ui/sonner";
+import { useAuthLifecycle } from "@/hooks/useAuth";
 
 function NotFoundComponent() {
   return (
@@ -115,6 +116,7 @@ function RootShell({ children }: { children: ReactNode }) {
 }
 
 function RootComponent() {
+  useAuthLifecycle();
   const { queryClient } = Route.useRouteContext();
 
   return (

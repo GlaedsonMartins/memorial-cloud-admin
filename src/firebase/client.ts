@@ -20,6 +20,7 @@ export const hasFirebaseConfig = Object.values(firebaseConfig).every(
 
 let app: FirebaseApp | null = null;
 let auth: Auth | null = null;
+let authPersistence: Promise<void> | null = null;
 let db: Firestore | null = null;
 let storage: FirebaseStorage | null = null;
 let functions: Functions | null = null;
@@ -41,11 +42,18 @@ export function getFirebaseApp() {
 export function getFirebaseAuth() {
   if (!auth) {
     auth = getAuth(getFirebaseApp());
-    if (typeof window !== "undefined") {
-      void setPersistence(auth, browserLocalPersistence).catch(console.error);
-    }
   }
   return auth;
+}
+
+export function prepareFirebaseAuth() {
+  if (!authPersistence) {
+    authPersistence = setPersistence(getFirebaseAuth(), browserLocalPersistence).catch((error) => {
+      authPersistence = null;
+      throw error;
+    });
+  }
+  return authPersistence;
 }
 
 export function getFirebaseDb() {

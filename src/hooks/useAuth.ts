@@ -1,78 +1,45 @@
-import { useEffect, useRef, useState } from "react";
-import type { User } from "firebase/auth";
-import { getFirebaseAuth, hasFirebaseConfig } from "@/firebase/client";
-import {
-  signOutAdmin,
-  subscribeToAuth,
-  subscribeToIdToken,
-  validateAdminSession,
-} from "@/services/authService";
+import { useEffect, useSyncExternalStore } from "react";
+import { hasFirebaseConfig } from "@/firebase/client";
+import { adminAuth } from "@/services/authService";
 
-const SESSION_VALIDATION_INTERVAL_MS = 60_000;
+const serverSnapshot = adminAuth.getSnapshot();
 
-function isConfirmedAuthorizationFailure(error: unknown) {
-  const code =
-    typeof error === "object" && error && "code" in error
-      ? String((error as { code?: unknown }).code)
-      : "";
-  return [
-    "functions/unauthenticated",
-    "functions/permission-denied",
-    "functions/not-found",
-  ].includes(code);
+// Mounted once by the root route; navigating never creates another auth subscription.
+export function useAuthLifecycle() {
+  useEffect(() => {
+    if (!hasFirebaseConfig) return;
+    const stop = adminAuth.start();
+    const synchronize = () => {
+      void adminAuth.synchronize();
+    };
+    const onVisible = () => {
+      if (document.visibilityState === "visible") synchronize();
+    };
+    const interval = window.setInterval(synchronize, 60_000);
+    window.addEventListener("online", synchronize);
+    window.addEventListener("focus", synchronize);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      stop();
+      window.clearInterval(interval);
+      window.removeEventListener("online", synchronize);
+      window.removeEventListener("focus", synchronize);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, []);
 }
 
 export function useAuth() {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(hasFirebaseConfig);
-  const [error, setError] = useState<string | null>(null);
-  const validationInFlight = useRef(false);
-
-  useEffect(() => {
-    if (!hasFirebaseConfig) {
-      setLoading(false);
-      return;
-    }
-
-    try {
-      const validateSilently = async (nextUser: User | null) => {
-        if (!nextUser || validationInFlight.current) return;
-        validationInFlight.current = true;
-        try {
-          await validateAdminSession();
-          await nextUser.getIdToken(true);
-        } catch (validationError) {
-          if (isConfirmedAuthorizationFailure(validationError)) {
-            await signOutAdmin().catch(() => undefined);
-          }
-        } finally {
-          validationInFlight.current = false;
-        }
-      };
-
-      const unsubscribeAuth = subscribeToAuth((nextUser) => {
-        setUser(nextUser);
-        setLoading(false);
-        void validateSilently(nextUser);
-      });
-      const unsubscribeToken = subscribeToIdToken((nextUser) => {
-        setUser(nextUser);
-        void validateSilently(nextUser);
-      });
-      const interval = window.setInterval(() => {
-        void validateSilently(getFirebaseAuth().currentUser);
-      }, SESSION_VALIDATION_INTERVAL_MS);
-
-      return () => {
-        unsubscribeAuth();
-        unsubscribeToken();
-        window.clearInterval(interval);
-      };
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Falha ao iniciar autenticação.");
-      setLoading(false);
-    }
-  }, []);
-
-  return { user, loading, error, configured: hasFirebaseConfig };
+  const state = useSyncExternalStore(
+    adminAuth.subscribe,
+    adminAuth.getSnapshot,
+    () => serverSnapshot,
+  );
+  return {
+    ...state,
+    configured: hasFirebaseConfig,
+    retry: adminAuth.retry,
+    signIn: adminAuth.signIn,
+    signOut: adminAuth.signOut,
+  };
 }

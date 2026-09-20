@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { hasFirebaseConfig } from "@/firebase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { signInAdmin } from "@/services/authService";
+import { readLoginEmail } from "@/services/authService";
 
 export const Route = createFileRoute("/login")({
   component: LoginPage,
@@ -24,6 +24,10 @@ function LoginPage() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    setEmail(readLoginEmail());
+  }, []);
+
+  useEffect(() => {
     if (auth.user) {
       void navigate({ to: "/" });
     }
@@ -33,12 +37,13 @@ function LoginPage() {
     event.preventDefault();
     setLoading(true);
     try {
-      await signInAdmin(email.trim(), password);
+      await auth.signIn(email.trim(), password);
       toast.success("Login realizado.");
       void navigate({ to: "/" });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Falha ao autenticar.");
     } finally {
+      setPassword("");
       setLoading(false);
     }
   }
@@ -66,9 +71,32 @@ function LoginPage() {
         )}
 
         <div className="space-y-4">
+          {auth.loading && !loading && (
+            <p role="status" className="text-xs text-muted-foreground">
+              Verificando seu login...
+            </p>
+          )}
+          {auth.error && (
+            <div role="alert" className="space-y-2 text-xs text-destructive">
+              <p>{auth.error}</p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={auth.loading}
+                onClick={() => void auth.retry()}
+              >
+                Tentar novamente
+              </Button>
+            </div>
+          )}
           <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Email</Label>
+            <Label htmlFor="login-email" className="text-xs text-muted-foreground">
+              Email
+            </Label>
             <Input
+              id="login-email"
+              name="email"
               type="email"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
@@ -76,8 +104,12 @@ function LoginPage() {
             />
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Senha</Label>
+            <Label htmlFor="login-password" className="text-xs text-muted-foreground">
+              Senha
+            </Label>
             <Input
+              id="login-password"
+              name="password"
               type="password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
@@ -86,7 +118,7 @@ function LoginPage() {
           </div>
           <Button
             className="h-10 w-full"
-            disabled={loading || !hasFirebaseConfig || !email || !password}
+            disabled={loading || auth.loading || !hasFirebaseConfig || !email || !password}
           >
             {loading ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />

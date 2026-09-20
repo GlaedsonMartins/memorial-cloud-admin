@@ -3,6 +3,7 @@ import { initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { FieldValue, getFirestore } from "firebase-admin/firestore";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
+import { createAdminSessionOperations } from "./adminSessions.js";
 
 initializeApp();
 
@@ -263,6 +264,14 @@ export const validateAdminSession = onCall(async (request) => {
   await assertAdmin(request);
   return { valid: true };
 });
+
+const adminSessions = createAdminSessionOperations({
+  db,
+  assertAdmin,
+  serverTimestamp: () => FieldValue.serverTimestamp(),
+});
+export const syncAdminDeviceSession = onCall(adminSessions.sync);
+export const endAdminDeviceSession = onCall(adminSessions.end);
 
 export const deleteRoomDevices = onCall(async (request) => {
   await assertAdmin(request);

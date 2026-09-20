@@ -22,8 +22,10 @@ export default defineConfig(({ mode }) => {
       tsconfigPaths({ projects: ["./tsconfig.json"] }),
       tanstackStart({
         server: { entry: "server" },
+        // Firebase Hosting serves static files and rewrites routes to /index.html.
+        ...(mode === "firebase" ? { spa: { enabled: true, prerender: { outputPath: "/index" } } } : {}),
       }),
-      nitro({ defaultPreset: "cloudflare-module" }),
+      nitro({ defaultPreset: mode === "firebase" ? "node-server" : "cloudflare-module" }),
       react(),
     ],
     server: {

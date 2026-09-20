@@ -57,7 +57,7 @@ import { hasFirebaseConfig } from "@/firebase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useMemorialData } from "@/hooks/useMemorialData";
 import { cn } from "@/lib/utils";
-import { signOutAdmin } from "@/services/authService";
+import { AdminDevices } from "@/components/admin-devices";
 import {
   createRoom,
   createTribute,
@@ -118,10 +118,10 @@ function DashboardPage() {
   const [createRoomOpen, setCreateRoomOpen] = useState(false);
 
   useEffect(() => {
-    if (!auth.loading && auth.configured && !auth.user) {
+    if (!auth.loading && auth.configured && !auth.user && !auth.error) {
       void navigate({ to: "/login" });
     }
-  }, [auth.configured, auth.loading, auth.user, navigate]);
+  }, [auth.configured, auth.loading, auth.user, auth.error, navigate]);
 
   const selectedRoom = useMemo(
     () => data.roomViews.find((room) => room.room.id === selectedRoomId) ?? null,
@@ -134,6 +134,22 @@ function DashboardPage() {
 
   if (auth.loading || data.loading) {
     return <LoadingScreen label="Carregando Memorial Admin" />;
+  }
+
+  if (!auth.user && auth.error) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background px-6 text-foreground">
+        <div role="alert" className="max-w-sm space-y-4 text-center">
+          <p className="text-sm">{auth.error}</p>
+          <div className="flex justify-center gap-2">
+            <Button onClick={() => void auth.retry()}>Tentar novamente</Button>
+            <Button variant="outline" onClick={() => void navigate({ to: "/login" })}>
+              Ir para login
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   if (!auth.user) {
@@ -182,7 +198,15 @@ function DashboardPage() {
               variant="outline"
               size="icon"
               className="h-9 w-9"
-              onClick={() => void signOutAdmin().then(() => navigate({ to: "/login" }))}
+              aria-label="Sair"
+              onClick={() =>
+                void auth
+                  .signOut()
+                  .then(() => navigate({ to: "/login" }))
+                  .catch(() =>
+                    toast.error("Não foi possível sair. Confira sua conexão e tente novamente."),
+                  )
+              }
             >
               <LogOut className="h-4 w-4" />
             </Button>
@@ -191,6 +215,17 @@ function DashboardPage() {
       </header>
 
       <main className="mx-auto max-w-[1440px] px-6 py-8">
+        {auth.error && (
+          <div
+            role="status"
+            className="mb-5 flex items-center justify-between gap-3 rounded-md border border-border p-3 text-xs"
+          >
+            <span>{auth.error}</span>
+            <Button variant="outline" size="sm" onClick={() => void auth.retry()}>
+              Tentar novamente
+            </Button>
+          </div>
+        )}
         {data.error && (
           <div className="mb-5 flex items-center gap-2 rounded-md border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive-foreground">
             <AlertTriangle className="h-4 w-4 text-destructive" />
@@ -1866,11 +1901,13 @@ function SettingsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="border-border bg-surface sm:max-w-lg">
+      <DialogContent className="max-h-[90dvh] overflow-y-auto border-border bg-surface sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Configuracoes gerais</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
+          <AdminDevices />
+          <Separator />
           <Field label="Nome da funeraria">
             <Input value={companyName} onChange={(event) => setCompanyName(event.target.value)} />
           </Field>
