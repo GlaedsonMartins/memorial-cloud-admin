@@ -273,7 +273,9 @@ const adminSessions = createAdminSessionOperations({
 export const syncAdminDeviceSession = onCall(adminSessions.sync);
 export const endAdminDeviceSession = onCall(adminSessions.end);
 
-export const deleteRoomDevices = onCall(async (request) => {
+// Keep CORS explicit because this callable is invoked by the Vercel admin
+// origin and must answer the browser preflight before authenticating.
+export const deleteRoomDevices = onCall({ cors: true }, async (request) => {
   await assertAdmin(request);
   const roomId = typeof request.data?.roomId === "string" ? request.data.roomId.trim() : "";
 
