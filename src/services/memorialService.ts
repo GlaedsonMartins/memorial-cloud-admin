@@ -399,7 +399,13 @@ export async function createTribute(
     schemaVersion: SCHEMA_VERSION,
   };
 
-  await setDoc(tributeRef, tributePayload);
+  const creationBatch = writeBatch(db);
+  creationBatch.set(tributeRef, tributePayload);
+  // Announce the draft so the paired Player can prepare its first photo.
+  creationBatch.update(doc(db, "rooms", draft.roomId), {
+    preparedTributeId: tributeRef.id,
+  });
+  await creationBatch.commit();
   onProgress?.(100);
   return tributeRef.id;
 }
@@ -471,6 +477,10 @@ export async function updateTribute(
     ),
     updatedAt: serverTimestamp(),
   });
+
+  if (tribute.status === "CREATED") {
+    batch.update(doc(db, "rooms", tribute.roomId), { preparedTributeId: tribute.id });
+  }
 
   if (tribute.status === "ACTIVE") {
     batch.set(
