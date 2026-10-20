@@ -19,8 +19,6 @@ import {
   type Unsubscribe,
 } from "firebase/firestore";
 import { getFirebaseDb } from "@/firebase/client";
-import { getFirebaseFunctions } from "@/firebase/client";
-import { httpsCallable } from "firebase/functions";
 import {
   deleteStoredFolder,
   deleteStoredFile,
@@ -753,7 +751,9 @@ export async function deactivateRoom(room: Room) {
     }),
   );
 
-  await deleteRoomDevice(room.id);
+  // Devices are removed below in the same admin operation. Do not depend on
+  // the optional deleteRoomDevices callable here: if that function is absent
+  // or being rolled out, a CORS/preflight failure must not block room removal.
   await Promise.all(deviceSnapshot.docs.map((snapshot) => deleteDoc(snapshot.ref)));
   await Promise.all(playerStatusSnapshot.docs.map((snapshot) => deleteDoc(snapshot.ref)));
 
@@ -764,11 +764,10 @@ export async function deactivateRoom(room: Room) {
 }
 
 export async function deleteRoomDevice(roomId: string) {
-  const deleteDevices = httpsCallable<{ roomId: string }, { deletedDevices: number }>(
-    getFirebaseFunctions(),
-    "deleteRoomDevices",
+  const snapshot = await getDocs(
+    query(collection(getFirebaseDb(), "devices"), where("roomId", "==", roomId)),
   );
-  await deleteDevices({ roomId });
+  await Promise.all(snapshot.docs.map((device) => deleteDoc(device.ref)));
 }
 
 export async function updateRoomSyncing(roomId: string) {
