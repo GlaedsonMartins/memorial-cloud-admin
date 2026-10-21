@@ -934,16 +934,28 @@ function RoomManagerSheet({
           </Tabs>
 
           {saving && (
-            <div className="rounded-md border border-border bg-background/45 px-4 py-3 text-sm">
-              <div className="mb-2 flex items-center justify-between">
-                <span className="text-muted-foreground">Upload e gravacao</span>
-                <span className="tabular-nums">{uploadProgress}%</span>
+            <div className="sticky top-0 z-20 rounded-lg border-2 border-primary/40 bg-primary/10 px-4 py-4 text-sm shadow-md">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-2">
+                  <Loader2 className="h-4 w-4 shrink-0 animate-spin text-primary" />
+                  <span className="font-medium">Enviando fotos e salvando homenagem...</span>
+                </div>
+                <span className="shrink-0 text-base font-semibold tabular-nums">{uploadProgress}%</span>
               </div>
+              <p className="mb-2 text-xs text-muted-foreground">
+                {photos.length + videos.length > 0
+                  ? `${photos.length + videos.length} arquivo(s) selecionado(s). Não feche esta janela até concluir.`
+                  : "Processando alterações..."}
+              </p>
               <div className="h-2 overflow-hidden rounded-sm bg-muted">
                 <div
                   className="h-full bg-primary transition-all"
                   style={{ width: `${uploadProgress}%` }}
                 />
+              </div>
+              <div className="mt-2 flex justify-between text-[11px] text-muted-foreground">
+                <span>Upload em andamento</span>
+                <span>{uploadProgress >= 100 ? "Finalizando..." : "Aguarde"}</span>
               </div>
             </div>
           )}
