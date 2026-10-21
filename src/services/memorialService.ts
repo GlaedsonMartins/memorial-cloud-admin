@@ -7,6 +7,7 @@ import {
   onSnapshot,
   orderBy,
   query,
+  runTransaction,
   serverTimestamp,
   setDoc,
   Timestamp,
@@ -586,29 +587,28 @@ export async function endTribute(room: Room, tribute: Tribute) {
 }
 
 export async function deleteTribute(tribute: Tribute) {
+  const db = getFirebaseDb();
+  await runTransaction(db, async (transaction) => {
+    const roomRef = doc(db, "rooms", tribute.roomId);
+    const sessionRef = doc(db, "active_sessions", tribute.roomId);
+    const [roomSnapshot, sessionSnapshot] = await Promise.all([
+      transaction.get(roomRef), transaction.get(sessionRef),
+    ]);
+    transaction.delete(doc(db, "tributes", tribute.id));
+    if (sessionSnapshot.data()?.tributeId === tribute.id) transaction.delete(sessionRef);
+    if (roomSnapshot.data()?.preparedTributeId === tribute.id) {
+      transaction.update(roomRef, { preparedTributeId: null });
+    }
+    if (roomSnapshot.data()?.activeTributeId === tribute.id) {
+      transaction.update(roomRef, { status: "FREE", activeTributeId: null, updatedAt: serverTimestamp() });
+    }
+  });
+  // Detach playback before removing its files. Storage failures cannot leave
+  // the room pointing at a deleted tribute.
   await Promise.all([
     deleteStoredFolder(`tributes/${tribute.id}/photos`),
     deleteStoredFolder(`tributes/${tribute.id}/videos`),
   ]);
-  const db = getFirebaseDb();
-  const [sessionSnapshot, roomSnapshot] = await Promise.all([
-    getDocs(query(collection(db, "active_sessions"), where("tributeId", "==", tribute.id))),
-    getDoc(doc(db, "rooms", tribute.roomId)),
-  ]);
-  const batch = writeBatch(db);
-
-  batch.delete(doc(db, "tributes", tribute.id));
-  sessionSnapshot.docs.forEach((snapshot) => batch.delete(snapshot.ref));
-
-  if (roomSnapshot.exists() && roomSnapshot.data()?.activeTributeId === tribute.id) {
-    batch.update(roomSnapshot.ref, {
-      status: "FREE",
-      activeTributeId: null,
-      updatedAt: serverTimestamp(),
-    });
-  }
-
-  await batch.commit();
 }
 
 export async function saveSettings(
@@ -743,6 +743,15 @@ export async function createRoom(name: string) {
 
 export async function deactivateRoom(room: Room) {
   const db = getFirebaseDb();
+
+  // Stop playback and reject new registrations before cleaning up files.
+  const stopBatch = writeBatch(db);
+  stopBatch.update(doc(db, "rooms", room.id), {
+    active: false, status: "FREE", activeTributeId: null, preparedTributeId: null,
+    updatedAt: serverTimestamp(),
+  });
+  stopBatch.delete(doc(db, "active_sessions", room.id));
+  await stopBatch.commit();
 
   const [tributeSnapshot, deviceSnapshot, playerStatusSnapshot] = await Promise.all([
     getDocs(query(collection(db, "tributes"), where("roomId", "==", room.id))),
